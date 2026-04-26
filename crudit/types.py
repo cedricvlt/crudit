@@ -35,5 +35,8 @@ UpdateAfterHookFn = Callable[[Any, Request, Any], Any]
 # (obj, request, current_user) -> None  (delete hooks)
 DeleteHookFn = Callable[[Any, Request, Any], None]
 
+# (objects, request, current_user) -> None  (reorder hooks)
+ReorderHookFn = Callable[[list[Any], Request, Any], None]
+
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]

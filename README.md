@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List, read, create, update, and delete endpoints implemented.
+> **Status:** List, read, create, update, delete, and reorder endpoints implemented.
 
 ---
 
@@ -107,7 +107,7 @@ class DistrictSchema(BaseModel):
 # routes.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_endpoint, CreateConfig, ParentParam, update_endpoint, UpdateConfig, delete_endpoint, DeleteConfig
+from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_endpoint, CreateConfig, ParentParam, update_endpoint, UpdateConfig, delete_endpoint, DeleteConfig, reorder_endpoint, ReorderConfig
 
 router = APIRouter()
 
@@ -210,6 +210,22 @@ delete_endpoint(
         permission_checker=check_permissions,
         tags=["Districts"],
         summary="Delete a district",
+    ),
+    get_db=get_db,
+)
+
+reorder_endpoint(
+    router=router,
+    path="/cities/{city_id}/districts/reorder",
+    model=District,
+    config=ReorderConfig(
+        path_filters={"city_id": "city_id"},
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:edit"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+        summary="Reorder districts within a city",
     ),
     get_db=get_db,
 )
@@ -442,6 +458,128 @@ For each DELETE request, crudit executes the following steps in order:
 5. `await db.delete(obj)` + `await db.commit()`
 6. Call `after_delete(obj, request, current_user)`
 7. Return **HTTP 204 No Content**
+
+---
+
+## Reorder endpoint
+
+`reorder_endpoint` registers a `POST` route that sets `sort_order` on a batch of objects in the requested sequence and returns **204 No Content**.
+
+The model must have a `sort_order` column. Positions are 0-based and assigned in the order of the `ids` array. Only the objects listed in `ids` are updated — other rows in the collection are left unchanged.
+
+### Input format
+
+```json
+{ "ids": [3, 1, 4, 2] }
+```
+
+Objects are assigned `sort_order = 0, 1, 2, 3` respectively. An empty `ids` list succeeds immediately with 204.
+
+### Path filters
+
+Use `path_filters` to scope the reorder to a nested collection, exactly as in `ListConfig`:
+
+```python
+reorder_endpoint(
+    router=router,
+    path="/cities/{city_id}/districts/reorder",
+    model=District,
+    config=ReorderConfig(
+        path_filters={"city_id": "city_id"},  # WHERE city_id = :city_id
+        ...
+    ),
+    get_db=get_db,
+)
+```
+
+Any ID that exists in the database but belongs to a different scope (e.g. a district in another city) is treated as not found and returns **404**.
+
+### Hooks
+
+```python
+def before(objects, request, current_user):
+    if any(obj.is_locked for obj in objects):
+        raise HTTPException(status_code=409, detail="Cannot reorder locked items.")
+
+async def after(objects, request, current_user):
+    await broadcast_reorder([obj.id for obj in objects])
+
+ReorderConfig(
+    before_reorder=before,  # (objects, request, current_user) -> None — raise to abort
+    after_reorder=after,    # (objects, request, current_user) -> None — after commit
+)
+```
+
+`before_reorder` receives the ordered list of ORM objects before any `sort_order` assignment. Raise any exception to abort — no changes are written. `after_reorder` receives the same objects after the commit; their `sort_order` attributes reflect the new positions.
+
+### Execution order
+
+For each POST request, crudit executes the following steps in order:
+
+1. Route-level auth / permission check
+2. Fetch all objects matching `ids` + path filters — returns **404** if any are missing or out of scope
+3. Object-level permission check (`tenant_id` / `allowed_users`) — returns **403** for inaccessible objects
+4. Call `before_reorder(objects, request, current_user)` — raise to abort
+5. Assign `sort_order = position index` for each object in order
+6. `await db.commit()`
+7. Call `after_reorder(objects, request, current_user)`
+8. Return **HTTP 204 No Content**
+
+---
+
+## Reorder endpoint response format
+
+Reorder endpoints return an empty body with **HTTP 204 No Content**.
+
+Status codes:
+- **204** — positions updated successfully
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or row-level permission check
+- **404** — one or more IDs not found or outside the path-filtered scope
+- **422** — request body failed schema validation
+
+---
+
+## `ReorderConfig` reference
+
+```python
+@dataclass
+class ReorderConfig:
+    # Path parameters
+    path_filters: dict[str, str]         # {"url_param": "model_field"}
+
+    # Auth
+    login_required: bool                 # default True — 401 if no user
+    login_dep: Callable | None           # FastAPI dependency returning current_user
+    permissions: list[str]               # required permission strings
+    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+
+    # Hooks
+    before_reorder: ReorderHookFn | None  # (objects, request, current_user) -> None — raise to abort
+    after_reorder: ReorderHookFn | None   # (objects, request, current_user) -> None — after commit
+
+    # FastAPI
+    dependencies: list[Any]              # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+---
+
+## `reorder_endpoint()` signature
+
+```python
+def reorder_endpoint(
+    router: APIRouter,
+    path: str,
+    model: type[DeclarativeBase],  # must have a sort_order column
+    config: ReorderConfig,
+    *,
+    get_db: Callable,              # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+The model must have a `sort_order` column — a `ValueError` is raised at registration time if it is absent. The primary key is auto-detected from the SQLAlchemy mapper. No response schema is required.
 
 ---
 

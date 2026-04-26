@@ -71,6 +71,8 @@ class District(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
+    sort_order: Mapped[int | None] = mapped_column(nullable=True, default=None)
+
     city: Mapped[City] = relationship("City", back_populates="districts")
     allowed_users: Mapped[list[User]] = relationship(
         "User", secondary=district_allowed_users
