@@ -58,10 +58,8 @@ def reorder_endpoint(
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Response:
-        # 1. Route-level auth / permission check
-        check_route_permissions(
-            current_user, _config.login_required, _config.permissions, _config.permission_checker
-        )
+        # 1. Login check
+        check_route_permissions(current_user, _config.login_required)
 
         # 2. Empty input — nothing to reorder
         if not body.ids:
@@ -97,8 +95,6 @@ def reorder_endpoint(
                 _model,
                 current_user,
                 _config.login_required,
-                _config.permissions,
-                _config.permission_checker,
             )
 
         ordered_objects = [objects_by_id[id_] for id_ in body.ids]
@@ -120,6 +116,9 @@ def reorder_endpoint(
         return Response(status_code=204)
 
     model_name = model.__name__
+    deps = list(_config.dependencies)
+    if _config.permission_dep is not None and _config.permissions:
+        deps.append(_config.permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
@@ -128,6 +127,6 @@ def reorder_endpoint(
         response_class=Response,
         tags=_config.tags or None,
         summary=_config.summary or f"Reorder {model_name} rows by providing an ordered list of IDs.",
-        dependencies=list(_config.dependencies),
+        dependencies=deps,
         responses=get_error_responses(403, 404),
     )

@@ -96,20 +96,24 @@ async def test_create_login_not_required_no_user_returns_201(seed, make_create_c
 
 
 # ---------------------------------------------------------------------------
-# Permission checker
+# Permission dep
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_create_permission_checker_denied_returns_403(seed, make_create_client):
+async def test_create_permission_dep_denied_returns_403(seed, make_create_client):
+    from fastapi import Depends, HTTPException
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def deny_all(current_user, permissions):
-        return False
+    def deny_dep(perms):
+        async def check():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return Depends(check)
 
     config = CreateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_checker=deny_all,
+        permission_dep=deny_dep,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
     )
     async with await make_create_client(config, current_user=user) as client:
@@ -118,16 +122,20 @@ async def test_create_permission_checker_denied_returns_403(seed, make_create_cl
 
 
 @pytest.mark.asyncio
-async def test_create_permission_checker_allowed_returns_201(seed, make_create_client, cleanup_districts):
+async def test_create_permission_dep_allowed_returns_201(seed, make_create_client, cleanup_districts):
+    from fastapi import Depends
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def allow_all(current_user, permissions):
-        return True
+    def allow_dep(perms):
+        async def check():
+            pass
+        return Depends(check)
 
     config = CreateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_checker=allow_all,
+        permission_dep=allow_dep,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
     )
     async with await make_create_client(config, current_user=user) as client:

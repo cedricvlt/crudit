@@ -52,20 +52,24 @@ async def test_delete_login_not_required_no_user_returns_204(delete_target, make
 
 
 # ---------------------------------------------------------------------------
-# Permission checker
+# Permission dep
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_delete_permission_checker_denied_returns_403(seed, make_delete_client):
+async def test_delete_permission_dep_denied_returns_403(seed, make_delete_client):
+    from fastapi import Depends, HTTPException
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def deny_all(current_user, permissions):
-        return False
+    def deny_dep(perms):
+        async def check():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return Depends(check)
 
     config = DeleteConfig(
         login_required=True,
         permissions=["core:district:delete"],
-        permission_checker=deny_all,
+        permission_dep=deny_dep,
     )
     async with await make_delete_client(config, current_user=user) as client:
         r = await client.delete("/districts/1")
@@ -73,16 +77,20 @@ async def test_delete_permission_checker_denied_returns_403(seed, make_delete_cl
 
 
 @pytest.mark.asyncio
-async def test_delete_permission_checker_allowed_returns_204(delete_target, make_delete_client, engine):
+async def test_delete_permission_dep_allowed_returns_204(delete_target, make_delete_client, engine):
+    from fastapi import Depends
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def allow_all(current_user, permissions):
-        return True
+    def allow_dep(perms):
+        async def check():
+            pass
+        return Depends(check)
 
     config = DeleteConfig(
         login_required=True,
         permissions=["core:district:delete"],
-        permission_checker=allow_all,
+        permission_dep=allow_dep,
     )
     async with await make_delete_client(config, current_user=user) as client:
         r = await client.delete("/districts/100")

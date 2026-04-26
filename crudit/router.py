@@ -20,7 +20,7 @@ from crudit.read.config import ReadConfig
 from crudit.read.endpoint import read_endpoint
 from crudit.reorder.config import ReorderConfig
 from crudit.reorder.endpoint import reorder_endpoint
-from crudit.types import PermissionChecker
+from crudit.types import PermissionDepFn
 from crudit.update.config import UpdateConfig
 from crudit.update.endpoint import update_endpoint
 
@@ -34,7 +34,7 @@ class SharedConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
     dependencies: list[Any] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
 
@@ -46,7 +46,7 @@ def _from_shared(config_cls: type, shared: SharedConfig | None, **extra: Any) ->
         permissions=shared.permissions,
         login_required=shared.login_required,
         login_dep=shared.login_dep,
-        permission_checker=shared.permission_checker,
+        permission_dep=shared.permission_dep,
         dependencies=shared.dependencies,
         tags=shared.tags,
         **extra,

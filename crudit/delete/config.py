@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crudit.types import DeleteHookFn, PermissionChecker
+from crudit.types import DeleteHookFn, PermissionDepFn
 
 
 @dataclass
@@ -12,7 +12,7 @@ class DeleteConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
 
     # Hooks
     before_delete: DeleteHookFn | None = None

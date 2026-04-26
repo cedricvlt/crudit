@@ -7,21 +7,14 @@ from sqlalchemy import inspect as sa_inspect, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudit.types import PermissionChecker
-
 
 def check_route_permissions(
     current_user: Any,
     login_required: bool,
-    permissions: list[str],
-    permission_checker: PermissionChecker | None,
 ) -> None:
-    """Route-level auth check. Raises 401/403 on failure."""
+    """Login check. Raises 401 when login_required and no user is present."""
     if login_required and current_user is None:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    if permissions and permission_checker is not None:
-        if not permission_checker(current_user, permissions):
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
 
 def check_object_permissions(
@@ -29,16 +22,13 @@ def check_object_permissions(
     model: type[DeclarativeBase],
     current_user: Any,
     login_required: bool,
-    permissions: list[str],
-    permission_checker: PermissionChecker | None,
 ) -> None:
     """Object-level permission check for read endpoints. Raises 401/403 on failure."""
-    check_route_permissions(current_user, login_required, permissions, permission_checker)
+    check_route_permissions(current_user, login_required)
 
     if current_user is None:
         return
 
-    # Row-level: mirrors the SQL or_(*conditions) from apply_permissions
     checks = _build_object_level_checks(model, current_user)
     if checks and not any(check(obj) for check in checks):
         raise HTTPException(status_code=403, detail="Insufficient permissions.")
@@ -49,10 +39,8 @@ def apply_permissions(
     model: type[DeclarativeBase],
     current_user: Any,
     login_required: bool,
-    permissions: list[str],
-    permission_checker: PermissionChecker | None,
 ) -> Select:
-    check_route_permissions(current_user, login_required, permissions, permission_checker)
+    check_route_permissions(current_user, login_required)
 
     if current_user is None:
         return query

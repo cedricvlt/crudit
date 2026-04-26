@@ -98,20 +98,24 @@ async def test_reorder_login_not_required_no_user_returns_204(seed, make_reorder
 
 
 # ---------------------------------------------------------------------------
-# Permission checker
+# Permission dep
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_reorder_permission_checker_denied_returns_403(seed, make_reorder_client):
+async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_client):
+    from fastapi import Depends, HTTPException
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def deny_all(current_user, permissions):
-        return False
+    def deny_dep(perms):
+        async def check():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return Depends(check)
 
     config = ReorderConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_checker=deny_all,
+        permission_dep=deny_dep,
     )
     async with await make_reorder_client(config, current_user=user) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 2]})
@@ -119,16 +123,20 @@ async def test_reorder_permission_checker_denied_returns_403(seed, make_reorder_
 
 
 @pytest.mark.asyncio
-async def test_reorder_permission_checker_allowed_returns_204(seed, make_reorder_client):
+async def test_reorder_permission_dep_allowed_returns_204(seed, make_reorder_client):
+    from fastapi import Depends
+
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def allow_all(current_user, permissions):
-        return True
+    def allow_dep(perms):
+        async def check():
+            pass
+        return Depends(check)
 
     config = ReorderConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_checker=allow_all,
+        permission_dep=allow_dep,
     )
     async with await make_reorder_client(config, current_user=user) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 2]})

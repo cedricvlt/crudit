@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crudit.types import HookFn, PermissionChecker, ReadAfterFn
+from crudit.types import HookFn, PermissionDepFn, ReadAfterFn
 
 
 @dataclass
@@ -12,7 +12,7 @@ class ReadConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
 
     # Hooks
     before_query: HookFn | None = None

@@ -74,11 +74,14 @@ async def test_allowed_users_grants_access(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_permission_checker_forbidden(seed, make_client):
+async def test_permission_dep_forbidden(seed, make_client):
+    from fastapi import Depends, HTTPException
     from tests.conftest import User
 
-    def checker(user, perms):
-        return False
+    def deny_dep(perms):
+        async def check():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return Depends(check)
 
     user = User(id=1, name="Alice", tenant_id=1)
 
@@ -87,7 +90,7 @@ async def test_permission_checker_forbidden(seed, make_client):
             path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
-            permission_checker=checker,
+            permission_dep=deny_dep,
         ),
         current_user=user,
     ) as client:
@@ -96,11 +99,14 @@ async def test_permission_checker_forbidden(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_permission_checker_allowed(seed, make_client):
+async def test_permission_dep_allowed(seed, make_client):
+    from fastapi import Depends
     from tests.conftest import User
 
-    def checker(user, perms):
-        return True
+    def allow_dep(perms):
+        async def check():
+            pass
+        return Depends(check)
 
     user = User(id=1, name="Alice", tenant_id=1)
 
@@ -109,7 +115,7 @@ async def test_permission_checker_allowed(seed, make_client):
             path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
-            permission_checker=checker,
+            permission_dep=allow_dep,
         ),
         current_user=user,
     ) as client:

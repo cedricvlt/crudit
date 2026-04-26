@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crudit.types import PermissionChecker, ReorderHookFn
+from crudit.types import PermissionDepFn, ReorderHookFn
 
 
 @dataclass
@@ -15,7 +15,7 @@ class ReorderConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
 
     # Hooks
     before_reorder: ReorderHookFn | None = None

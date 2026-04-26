@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crudit.types import AfterFn, FilterFn, HookFn, LabelFn, PermissionChecker, SearchFn
+from crudit.types import AfterFn, FilterFn, HookFn, LabelFn, PermissionDepFn, SearchFn
 
 
 @dataclass
@@ -19,7 +19,7 @@ class OptionsConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
 
     # Filters — plain field names or "relationship.field" notation
     filterable_fields: list[str] = field(default_factory=list)

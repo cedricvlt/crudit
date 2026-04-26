@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import DeclarativeBase
 
-from crudit.types import CreateHookFn, FieldSetterFn, PermissionChecker
+from crudit.types import CreateHookFn, FieldSetterFn, PermissionDepFn
 
 
 @dataclass
@@ -29,7 +29,7 @@ class CreateConfig:
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
     login_dep: Callable | None = None
-    permission_checker: PermissionChecker | None = None
+    permission_dep: PermissionDepFn | None = None
 
     # Hooks
     before_create: CreateHookFn | None = None

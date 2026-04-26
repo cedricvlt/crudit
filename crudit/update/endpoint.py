@@ -56,10 +56,8 @@ def update_endpoint(
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Any:
-        # 1. Route-level auth / permission check
-        check_route_permissions(
-            current_user, _config.login_required, _config.permissions, _config.permission_checker
-        )
+        # 1. Login check
+        check_route_permissions(current_user, _config.login_required)
 
         # 2. Fetch existing object
         pk_value = request.path_params.get("id")
@@ -87,8 +85,6 @@ def update_endpoint(
             _model,
             current_user,
             _config.login_required,
-            _config.permissions,
-            _config.permission_checker,
         )
 
         # 4. Build patch dict (only fields the client sent)
@@ -140,6 +136,9 @@ def update_endpoint(
     _handler.__annotations__["body"] = _update_schema
 
     model_name = model.__name__
+    deps = list(_config.dependencies)
+    if _config.permission_dep is not None and _config.permissions:
+        deps.append(_config.permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
@@ -148,6 +147,6 @@ def update_endpoint(
         status_code=200,
         tags=_config.tags or None,
         summary=_config.summary or f"Update an existing {model_name} row in the database.",
-        dependencies=list(_config.dependencies),
+        dependencies=deps,
         responses=get_error_responses(400, 403, 404),
     )

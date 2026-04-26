@@ -111,8 +111,12 @@ from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_
 
 router = APIRouter()
 
-def check_permissions(current_user, required: list[str]) -> bool:
-    return all(p in current_user.permissions for p in required)
+def make_permission_dep(perms: list[str]):
+    """Return a FastAPI Depends that raises 403 when the user lacks the given permissions."""
+    async def check(current_user=Depends(get_current_user)):
+        if not all(p in current_user.permissions for p in perms):
+            raise HTTPException(status_code=403)
+    return Depends(check)
 
 list_endpoint(
     router=router,
@@ -127,7 +131,7 @@ list_endpoint(
         login_required=True,
         login_dep=get_current_user,            # FastAPI dependency → current_user
         permissions=["erp:district:view"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
 
         # --- filtering ---
         filterable_fields=["name", "is_active", "city.name"],
@@ -155,7 +159,7 @@ read_endpoint(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:view"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
         summary="Get a district by ID",
     ),
@@ -175,7 +179,7 @@ create_endpoint(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
         summary="Create a district in a city",
     ),
@@ -192,7 +196,7 @@ update_endpoint(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
         summary="Partially update a district",
     ),
@@ -207,7 +211,7 @@ delete_endpoint(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:delete"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
         summary="Delete a district",
     ),
@@ -223,7 +227,7 @@ reorder_endpoint(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
         summary="Reorder districts within a city",
     ),
@@ -260,7 +264,7 @@ router = crud_router(
         login_required=True,
         login_dep=get_current_user,
         permissions=["erp:district:view"],
-        permission_checker=check_permissions,
+        permission_dep=make_permission_dep,
         tags=["Districts"],
     ),
 
@@ -309,7 +313,7 @@ Valid endpoint names: `list`, `read`, `create`, `update`, `delete`, `options`, `
 | `login_required` | `bool` | `True` |
 | `login_dep` | `Callable \| None` | `None` |
 | `permissions` | `list[str]` | `[]` |
-| `permission_checker` | `PermissionChecker \| None` | `None` |
+| `permission_dep` | `PermissionDepFn \| None` | `None` |
 | `dependencies` | `list[Any]` | `[]` |
 | `tags` | `list[str]` | `[]` |
 
@@ -794,11 +798,21 @@ Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` tri
 
 crudit applies a two-layer permission model on both list and read endpoints.
 
-**1. Route-level** — checked once per request:
+**1. Route-level** — a FastAPI dependency injected at registration time:
 ```python
-permission_checker(current_user, config.permissions)  # must return True
+# permission_dep is called once at registration with the permissions list.
+# It must return a FastAPI Depends object that raises HTTP 403 on failure.
+def make_permission_dep(perms: list[str]):
+    async def check(current_user=Depends(get_current_user)):
+        if not all(p in current_user.permissions for p in perms):
+            raise HTTPException(status_code=403)
+    return Depends(check)
+
+config = ListConfig(
+    permissions=["erp:district:view"],
+    permission_dep=make_permission_dep,
+)
 ```
-Returns HTTP 403 on failure.
 
 **2. Row-level** — auto-detected from model attributes:
 
@@ -919,7 +933,7 @@ class OptionsConfig:
     login_required: bool             # default True — 401 if no user
     login_dep: Callable | None       # FastAPI dependency returning current_user
     permissions: list[str]           # required permission strings
-    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Filtering
     filterable_fields: list[str]     # plain or "rel.field"
@@ -1007,7 +1021,7 @@ class ListConfig:
     login_required: bool                # default True — 401 if no user
     login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_checker: Callable | None # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Filtering
     filterable_fields: list[str]        # plain or "rel.field"
@@ -1042,7 +1056,7 @@ class ReadConfig:
     login_required: bool                # default True — 401 if no user
     login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_checker: Callable | None # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_query: HookFn | None         # (query, request, current_user) -> query
@@ -1071,7 +1085,7 @@ class CreateConfig:
     login_required: bool                 # default True — 401 if no user
     login_dep: Callable | None           # FastAPI dependency returning current_user
     permissions: list[str]               # required permission strings
-    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_create: CreateHookFn | None   # (obj, request, current_user) -> obj
@@ -1158,7 +1172,7 @@ class UpdateConfig:
     login_required: bool                      # default True — 401 if no user
     login_dep: Callable | None                # FastAPI dependency returning current_user
     permissions: list[str]                    # required permission strings
-    permission_checker: Callable | None       # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None     # (list[str]) -> Depends
 
     # Hooks
     before_update: UpdateBeforeHookFn | None  # (obj, patch_data, request, current_user) -> patch_data
@@ -1200,7 +1214,7 @@ class DeleteConfig:
     login_required: bool                # default True — 401 if no user
     login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_checker: Callable | None # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_delete: DeleteHookFn | None  # (obj, request, current_user) -> None — raise to abort
@@ -1243,7 +1257,7 @@ class ReorderConfig:
     login_required: bool                 # default True — 401 if no user
     login_dep: Callable | None           # FastAPI dependency returning current_user
     permissions: list[str]               # required permission strings
-    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_reorder: ReorderHookFn | None  # (objects, request, current_user) -> None — raise to abort

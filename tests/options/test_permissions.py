@@ -34,8 +34,14 @@ async def test_login_not_required_no_user_succeeds(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_permission_checker_deny(seed, make_client):
+async def test_permission_dep_deny(seed, make_client):
+    from fastapi import Depends, HTTPException
     from tests.conftest import User
+
+    def deny_dep(perms):
+        async def check():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return Depends(check)
 
     async with await make_client(
         OptionsConfig(
@@ -43,7 +49,7 @@ async def test_permission_checker_deny(seed, make_client):
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
-            permission_checker=lambda user, perms: False,
+            permission_dep=deny_dep,
         ),
         current_user=User(id=1, name="Alice", tenant_id=1),
     ) as client:
@@ -52,8 +58,14 @@ async def test_permission_checker_deny(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_permission_checker_allow(seed, make_client):
+async def test_permission_dep_allow(seed, make_client):
+    from fastapi import Depends
     from tests.conftest import User
+
+    def allow_dep(perms):
+        async def check():
+            pass
+        return Depends(check)
 
     async with await make_client(
         OptionsConfig(
@@ -61,7 +73,7 @@ async def test_permission_checker_allow(seed, make_client):
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
-            permission_checker=lambda user, perms: True,
+            permission_dep=allow_dep,
         ),
         current_user=User(id=1, name="Alice", tenant_id=1),
     ) as client:

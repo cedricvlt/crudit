@@ -81,8 +81,6 @@ def options_endpoint(
             _model,
             current_user,
             _config.login_required,
-            _config.permissions,
-            _config.permission_checker,
         )
         query = apply_search(
             query,
@@ -150,6 +148,9 @@ def options_endpoint(
         )
 
     model_name = model.__name__
+    deps = list(_config.dependencies)
+    if _config.permission_dep is not None and _config.permissions:
+        deps.append(_config.permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
@@ -157,7 +158,7 @@ def options_endpoint(
         response_model=PaginatedResponse[OptionItem],
         tags=_config.tags or None,
         summary=_config.summary or f"List {model_name} option items for selection.",
-        dependencies=list(_config.dependencies),
+        dependencies=deps,
         responses=get_error_responses(403),
     )
 
