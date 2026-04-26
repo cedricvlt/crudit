@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List, read, create, update, delete, and reorder endpoints implemented.
+> **Status:** List, read, create, update, delete, reorder, and options endpoints implemented.
 
 ---
 
@@ -648,6 +648,27 @@ Status codes:
 
 ---
 
+## Options endpoint response format
+
+Options endpoints return the same paginated envelope as the list endpoint, but each item contains only `id` and `label`:
+
+```json
+{
+  "data": [
+    { "id": 1, "label": "Paris — Montmartre" },
+    { "id": 2, "label": "Paris — Marais" }
+  ],
+  "total_count": 2,
+  "has_more": false,
+  "page": 1,
+  "items_per_page": 25
+}
+```
+
+`label` is always a `str`. `id` reflects the model's primary key type.
+
+---
+
 ## List endpoint response format
 
 All list endpoints return the same paginated envelope:
@@ -764,7 +785,7 @@ Call: `GET /items?active_this_week=1`
 
 All hooks may be **sync or async** — crudit detects and awaits accordingly.
 
-### List endpoint hooks
+### List / options endpoint hooks
 
 ```python
 async def log_query(query: Select, request: Request, current_user) -> Select:
@@ -782,6 +803,8 @@ config = ListConfig(
     after_query=redact_sensitive,  # (rows, request, current_user) -> rows
 )
 ```
+
+The same hooks apply to `OptionsConfig`. `after_query` receives ORM model instances — after the hook the endpoint converts them to `{id, label}` items.
 
 ### Read endpoint hooks
 
@@ -816,6 +839,98 @@ class District(Base):
 ```
 
 Sort columns always use `NULLS LAST`.
+
+---
+
+## `OptionsConfig` reference
+
+```python
+@dataclass
+class OptionsConfig:
+    # Label — exactly one must be provided
+    label_field: str | None          # model column name used as the label
+    label_fn: LabelFn | None         # (row) -> str — callable for computed labels
+
+    # Path parameters
+    path_filters: dict[str, str]     # {"url_param": "model_field"}
+
+    # Auth
+    login_required: bool             # default True — 401 if no user
+    login_dep: Callable | None       # FastAPI dependency returning current_user
+    permissions: list[str]           # required permission strings
+    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+
+    # Filtering
+    filterable_fields: list[str]     # plain or "rel.field"
+    filter_fns: dict[str, FilterFn]  # field -> custom fn (overrides built-in logic)
+    default_filters: dict[str, Any]  # always-applied, not exposed as URL params
+
+    # Sorting
+    sortable_fields: list[str]       # plain or "rel.field"
+
+    # Search
+    search_fields: list[str]         # fields for ?q= ILIKE search
+    search_fn: SearchFn | None       # custom search fn (overrides search_fields)
+
+    # Hooks
+    before_query: HookFn | None      # (query, request, current_user) -> query
+    after_query: AfterFn | None      # (rows, request, current_user) -> rows
+
+    # FastAPI
+    dependencies: list[Any]          # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+Exactly one of `label_field` or `label_fn` must be set — a `CruditConfigError` is raised at registration time otherwise.
+
+---
+
+## `options_endpoint()` signature
+
+```python
+def options_endpoint(
+    router: APIRouter,
+    path: str,
+    model: type[DeclarativeBase],
+    config: OptionsConfig,
+    *,
+    schema: type[BaseModel] | None = None,  # for join resolution only
+    get_db: Callable,                        # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+`schema` is optional. Pass it when `label_fn` or filter/sort fields access related objects — it is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. The endpoint always returns `PaginatedResponse[OptionItem]`.
+
+**Usage example:**
+
+```python
+from crudit import options_endpoint, OptionsConfig
+
+options_endpoint(
+    router=router,
+    path="/cities/{city_id}/districts/options",
+    model=District,
+    config=OptionsConfig(
+        path_filters={"city_id": "city_id"},
+        login_required=False,
+        # Simple column label:
+        label_field="name",
+        # — or — computed label using related data:
+        # label_fn=lambda row: f"{row.city.name} — {row.name}",
+        sortable_fields=["name"],
+        search_fields=["name"],
+        filterable_fields=["is_active"],
+    ),
+    schema=DistrictSchema,  # needed when label_fn uses row.city
+    get_db=get_db,
+)
+```
+
+```
+GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=25
+→ {"data": [{"id": 1, "label": "Montmartre"}], "total_count": 1, "has_more": false, ...}
+```
 
 ---
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -17,3 +17,8 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class CountOnlyResponse(BaseModel):
     total_count: int
+
+
+class OptionItem(BaseModel):
+    id: Any
+    label: str

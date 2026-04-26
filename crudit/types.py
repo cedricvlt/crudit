@@ -40,3 +40,6 @@ ReorderHookFn = Callable[[list[Any], Request, Any], None]
 
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]
+
+# (row) -> str  (options label builder)
+LabelFn = Callable[[Any], str]
