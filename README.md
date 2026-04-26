@@ -2,9 +2,9 @@
 
 A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
-Declare once, get a fully-featured paginated list endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
+Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List and read endpoints implemented. Create / update / delete coming next.
+> **Status:** List, read, and create endpoints implemented. Update / delete coming next.
 
 ---
 
@@ -107,7 +107,7 @@ class DistrictSchema(BaseModel):
 # routes.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig
+from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_endpoint, CreateConfig, ParentParam
 
 router = APIRouter()
 
@@ -161,7 +161,151 @@ read_endpoint(
     ),
     get_db=get_db,
 )
+
+create_endpoint(
+    router=router,
+    path="/cities/{city_id}/districts",
+    model=District,
+    create_schema=DistrictCreateSchema,   # input body schema
+    read_schema=DistrictSchema,           # response schema (with joins)
+    config=CreateConfig(
+        parent_params=[
+            ParentParam(url_param="city_id", model=City, child_field="city_id"),
+        ],
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:edit"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+        summary="Create a district in a city",
+    ),
+    get_db=get_db,
+)
 ```
+
+---
+
+## Create endpoint
+
+`create_endpoint` registers a `POST` route that validates the request body, auto-completes system fields, persists the object, and returns it as the read schema with **HTTP 201**.
+
+### Schemas
+
+Two separate schemas are required:
+
+```python
+class DistrictCreateSchema(BaseModel):
+    name: str
+    is_active: bool = True
+    # city_id is intentionally absent — set from the path param
+
+class DistrictSchema(BaseModel):   # reuse the read schema
+    id: int
+    name: str
+    is_active: bool
+    city_id: int
+    city: CitySchema       # joined relationship — loaded automatically
+```
+
+### Parent path parameters
+
+`parent_params` maps URL parameters to parent models. For each entry, crudit:
+
+1. Reads the path parameter value
+2. Queries the parent model and returns **404** if not found
+3. Runs the same route-level and row-level permission checks on the parent
+4. Sets the corresponding FK field on the new object (overriding any body value)
+
+```python
+ParentParam(
+    url_param="city_id",   # name of the FastAPI path parameter
+    model=City,            # parent SQLAlchemy model to fetch
+    child_field="city_id", # FK field to set on the new object
+)
+```
+
+Multiple parents are supported (e.g. `/tenants/{tenant_id}/cities/{city_id}/districts`).
+
+### Auto-complete fields
+
+| Field | Condition | Value |
+|---|---|---|
+| `created_at` | column exists and has no `server_default` | `datetime.now(timezone.utc)` |
+| `created_by` | column exists and user is authenticated | `current_user.id` |
+
+### Field setters
+
+For any field that needs custom logic, provide a setter callable in `field_setters`. Setters run after the built-in auto-complete and may be sync or async.
+
+```python
+def set_tenant(obj, request, current_user):
+    return current_user.tenant_id
+
+async def set_slug(obj, request, current_user):
+    return slugify(obj.name)
+
+CreateConfig(
+    field_setters={
+        "tenant_id": set_tenant,  # (obj, request, current_user) -> value
+        "slug": set_slug,
+    },
+)
+```
+
+### Hooks
+
+```python
+def before(obj, request, current_user):
+    obj.name = obj.name.strip()
+    return obj
+
+async def after(obj, request, current_user):
+    await notify_created(obj.id)
+    return obj
+
+CreateConfig(
+    before_create=before,   # (obj, request, current_user) -> obj  — before db.add()
+    after_create=after,     # (obj, request, current_user) -> obj  — after commit, before response
+)
+```
+
+`before_create` receives the unsaved ORM object and may mutate or replace it. `after_create` receives the reloaded object (with all relationships) after the transaction has committed.
+
+### Execution order
+
+For each POST request, crudit executes the following steps in order:
+
+1. Route-level auth / permission check
+2. Parent lookup + 404 check + parent permission check (for each `parent_params` entry)
+3. Parse and validate body with `create_schema`
+4. Build ORM object from body
+5. Set parent FK fields
+6. Auto-fill `created_at` (if applicable)
+7. Auto-fill `created_by` (if applicable)
+8. Run `field_setters`
+9. Call `before_create` hook
+10. `db.add(obj)` + `await db.commit()`
+11. Reload object with eager-loaded relationships (from `read_schema`)
+12. Call `after_create` hook
+13. Return `read_schema.model_validate(obj)` with **HTTP 201**
+
+---
+
+## Create endpoint response format
+
+Create endpoints return the created object serialised as `read_schema` (same structure as the read endpoint), with all joined relationships loaded:
+
+```json
+{ "id": 5, "name": "Pigalle", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" } }
+```
+
+Status codes:
+- **201** — object created successfully
+- **400** — missing required path parameter
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or parent row-level permission check
+- **404** — a declared parent object was not found
+- **422** — request body failed schema validation
 
 ---
 
@@ -415,6 +559,43 @@ class ReadConfig:
 
 ---
 
+## `CreateConfig` reference
+
+```python
+@dataclass
+class CreateConfig:
+    # Parent resolution
+    parent_params: list[ParentParam]     # see ParentParam below
+
+    # Auto-complete field setters
+    field_setters: dict[str, FieldSetterFn]  # field -> (obj, request, user) -> value
+
+    # Auth
+    login_required: bool                 # default True — 401 if no user
+    login_dep: Callable | None           # FastAPI dependency returning current_user
+    permissions: list[str]               # required permission strings
+    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+
+    # Hooks
+    before_create: CreateHookFn | None   # (obj, request, current_user) -> obj
+    after_create: CreateHookFn | None    # (obj, request, current_user) -> obj
+
+    # FastAPI
+    dependencies: list[Any]              # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+```python
+@dataclass
+class ParentParam:
+    url_param: str               # path parameter name, e.g. "city_id"
+    model: type[DeclarativeBase] # parent SQLAlchemy model to fetch
+    child_field: str             # FK field to set on the new object, e.g. "city_id"
+```
+
+---
+
 ## `list_endpoint()` signature
 
 ```python
@@ -446,3 +627,22 @@ def read_endpoint(
 ```
 
 The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper (composite primary keys are not supported). Join resolution runs at **registration time** (once), not per request.
+
+---
+
+## `create_endpoint()` signature
+
+```python
+def create_endpoint(
+    router: APIRouter,
+    path: str,
+    model: type[DeclarativeBase],
+    create_schema: type[BaseModel],  # input body schema
+    read_schema: type[BaseModel],    # response schema (may include joined relations)
+    config: CreateConfig,
+    *,
+    get_db: Callable,                # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+Join resolution for `read_schema` runs at **registration time** (once). The primary key is auto-detected from the SQLAlchemy mapper. The `create_schema` is used for OpenAPI request body docs and Pydantic validation.

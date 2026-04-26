@@ -20,5 +20,11 @@ AfterFn = Callable[[list[Any], Request, Any], list[Any]]
 # (row, request, current_user) -> row
 ReadAfterFn = Callable[[Any, Request, Any], Any]
 
+# (obj, request, current_user) -> obj  (create hooks)
+CreateHookFn = Callable[[Any, Request, Any], Any]
+
+# (obj, request, current_user) -> value  (field setter)
+FieldSetterFn = Callable[[Any, Request, Any], Any]
+
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]

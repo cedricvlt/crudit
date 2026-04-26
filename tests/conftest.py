@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from datetime import datetime
 
 import pytest_asyncio
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -65,6 +66,8 @@ class District(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     city: Mapped[City] = relationship("City", back_populates="districts")
     allowed_users: Mapped[list[User]] = relationship(
@@ -149,3 +152,17 @@ class DistrictSchema(BaseModel):
     is_active: bool
     city_id: int
     city: CitySchema
+    created_at: datetime | None = None
+    created_by: int | None = None
+
+
+class DistrictCreateSchema(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+class DistrictCreateFlatSchema(BaseModel):
+    """For tests that create a district without a city path param."""
+    name: str
+    is_active: bool = True
+    city_id: int
