@@ -239,11 +239,11 @@ reorder_endpoint(
 
 ## crud_router
 
-`crud_router` is a one-call alternative to registering each endpoint individually. It returns a FastAPI `APIRouter` pre-configured with up to seven verbs.
+`crud_router` is a one-call alternative to registering each endpoint individually. It returns a FastAPI `APIRouter` pre-configured with the five core CRUD verbs by default.
 
 ```python
 from fastapi import FastAPI
-from crudit import crud_router, SharedConfig, OptionsConfig
+from crudit import crud_router, SharedConfig
 
 app = FastAPI()
 
@@ -259,17 +259,16 @@ router = crud_router(
     # --- db dependency ---
     get_db=get_db,
 
-    # --- shared auth/FastAPI defaults (applied to every verb without an explicit config) ---
+    # --- auth/FastAPI fields shared across all endpoints ---
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    tags=["Districts"],
+
+    # --- shared auth defaults (applied to every verb without an explicit config) ---
     shared=SharedConfig(
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:view"],
-        permission_dep=make_permission_dep,
-        tags=["Districts"],
     ),
-
-    # --- options requires an explicit config (label_field or label_fn is mandatory) ---
-    options=OptionsConfig(label_field="name"),
 )
 
 app.include_router(router, prefix="/districts")
@@ -283,13 +282,30 @@ GET     /districts/{id}         read
 POST    /districts              create
 PATCH   /districts/{id}         update
 DELETE  /districts/{id}         delete
-GET     /districts/options      options
-POST    /districts/reorder      reorder
 ```
 
-### Restricting endpoints
+### Adding options and reorder
 
-Pass `endpoints` to register only a subset of verbs:
+`options` and `reorder` are opt-in via `extra_endpoints`:
+
+```python
+router = crud_router(
+    model=District,
+    list_item_schema=DistrictSchema,
+    read_schema=DistrictSchema,
+    create_schema=DistrictCreateSchema,
+    update_schema=DistrictUpdateSchema,
+    get_db=get_db,
+    extra_endpoints=["options", "reorder"],
+    shared=SharedConfig(login_required=False),
+)
+```
+
+No `OptionsConfig` is needed — it defaults to `label_field="name"`. Pass an explicit `options=OptionsConfig(...)` to customise the label or any other field.
+
+### Restricting core endpoints
+
+Pass `crud_endpoints` to register only a subset of the five core verbs:
 
 ```python
 router = crud_router(
@@ -297,25 +313,33 @@ router = crud_router(
     list_item_schema=DistrictSchema,
     read_schema=DistrictSchema,
     get_db=get_db,
-    endpoints=["list", "read"],
+    crud_endpoints=["list", "read"],
     shared=SharedConfig(login_required=False),
 )
 ```
 
-Valid endpoint names: `list`, `read`, `create`, `update`, `delete`, `options`, `reorder`.
+Valid `crud_endpoints` values: `list`, `read`, `create`, `update`, `delete`.
+Valid `extra_endpoints` values: `options`, `reorder`.
+
+### Top-level auth arguments
+
+`login_dep`, `permission_dep`, and `tags` are declared at the `crud_router` level because they are always the same for every endpoint on a given router:
+
+| Argument | Type | Default | Description |
+|---|---|---|---|
+| `login_dep` | `Callable \| None` | `None` | FastAPI dependency returning `current_user` |
+| `permission_dep` | `PermissionDepFn \| None` | `None` | `(list[str]) -> Depends` — route-level permission check |
+| `tags` | `list[str] \| None` | `None` | OpenAPI tags applied to all registered routes |
 
 ### SharedConfig
 
-`SharedConfig` sets the default values for auth and FastAPI fields on every verb that does not have an explicit per-verb config:
+`SharedConfig` sets auth defaults for every verb that does not have an explicit per-verb config:
 
 | Field | Type | Default |
 |---|---|---|
 | `login_required` | `bool` | `True` |
-| `login_dep` | `Callable \| None` | `None` |
 | `permissions` | `list[str]` | `[]` |
-| `permission_dep` | `PermissionDepFn \| None` | `None` |
 | `dependencies` | `list[Any]` | `[]` |
-| `tags` | `list[str]` | `[]` |
 
 ### Per-verb config overrides
 
@@ -329,10 +353,10 @@ router = crud_router(
     create_schema=DistrictCreateSchema,
     update_schema=DistrictUpdateSchema,
     get_db=get_db,
-    shared=SharedConfig(login_required=True, login_dep=get_current_user),
+    login_dep=get_current_user,
+    shared=SharedConfig(login_required=True),
     # override: list is public, everything else requires auth
     list=ListConfig(login_required=False),
-    options=OptionsConfig(label_field="name", login_required=False),
 )
 ```
 
@@ -345,12 +369,12 @@ router = crud_router(
 | create | `create_schema` | `read_schema` |
 | update | `update_schema` | `read_schema` |
 | delete | — | — (204) |
-| options | — | `OptionItem` (label_field/fn from `OptionsConfig`) |
+| options | — | `OptionItem` (label from `OptionsConfig`, defaults to `"name"`) |
 | reorder | `{ids: [...]}` | — (204) |
 
 ### Notes
 
-- `options` always requires an explicit `OptionsConfig` (with `label_field` or `label_fn`). It cannot be defaulted from `shared`.
+- `options` defaults to `label_field="name"` when no `OptionsConfig` is provided. Pass `options=OptionsConfig(label_field="...")` or `options=OptionsConfig(label_fn=...)` to customise.
 - `reorder` requires the model to have a `sort_order` column.
 - Paths are always relative to the router prefix set in `app.include_router(..., prefix=...)`.
 
@@ -922,7 +946,7 @@ Sort columns always use `NULLS LAST`.
 ```python
 @dataclass
 class OptionsConfig:
-    # Label — exactly one must be provided
+    # Label — at most one may be set; defaults to label_field="name" when neither is provided
     label_field: str | None          # model column name used as the label
     label_fn: LabelFn | None         # (row) -> str — callable for computed labels
 
@@ -957,7 +981,7 @@ class OptionsConfig:
     summary: str | None
 ```
 
-Exactly one of `label_field` or `label_fn` must be set — a `CruditConfigError` is raised at registration time otherwise.
+At most one of `label_field` or `label_fn` may be set. When neither is provided, `label_field` defaults to `"name"`. Setting both raises a `CruditConfigError` at registration time.
 
 ---
 

@@ -119,18 +119,12 @@ async def test_label_fn_coerced_to_str(seed, make_client):
 # Config validation
 # ---------------------------------------------------------------------------
 
-def test_missing_label_raises():
+def test_no_label_defaults_to_name():
     from fastapi import APIRouter
+    config = OptionsConfig(login_required=False)
     router = APIRouter()
-
-    with pytest.raises(CruditConfigError, match="label_field or label_fn"):
-        options_endpoint(
-            router=router,
-            path="/districts",
-            model=District,
-            config=OptionsConfig(login_required=False),
-            get_db=lambda: None,
-        )
+    options_endpoint(router=router, path="/districts", model=District, config=config, get_db=lambda: None)
+    assert config.label_field == "name"
 
 
 def test_both_label_raises():

@@ -40,10 +40,8 @@ def options_endpoint(
     it is used solely for join resolution, not for serialisation.
     """
     if config.label_field is None and config.label_fn is None:
-        raise CruditConfigError(
-            "OptionsConfig requires either label_field or label_fn."
-        )
-    if config.label_field is not None and config.label_fn is not None:
+        config.label_field = "name"
+    elif config.label_field is not None and config.label_fn is not None:
         raise CruditConfigError(
             "OptionsConfig requires either label_field or label_fn, not both."
         )
