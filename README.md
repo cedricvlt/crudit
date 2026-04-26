@@ -14,7 +14,7 @@ Declare once, get a fully-featured endpoint: filtering, sorting, search, nested 
 pip install crudit
 ```
 
-**Requirements:** Python ≥ 3.13, FastAPI ≥ 0.111, SQLAlchemy ≥ 2.0, Pydantic ≥ 2.0.
+**Requirements:** Python ≥ 3.12, FastAPI ≥ 0.111, SQLAlchemy ≥ 2.0, Pydantic ≥ 2.0.
 
 ---
 
