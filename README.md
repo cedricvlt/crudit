@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured paginated list endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List endpoint implemented. Create / update / delete coming next.
+> **Status:** List and read endpoints implemented. Create / update / delete coming next.
 
 ---
 
@@ -22,7 +22,7 @@ pip install crudite
 
 ```python
 from fastapi import APIRouter
-from crudite import list_endpoint, ListConfig
+from crudite import list_endpoint, ListConfig, read_endpoint, ReadConfig
 
 router = APIRouter()
 
@@ -39,12 +39,22 @@ list_endpoint(
     ),
     get_db=get_db,
 )
+
+read_endpoint(
+    router=router,
+    path="/districts/{id}",
+    model=District,
+    schema=DistrictSchema,
+    config=ReadConfig(login_required=False),
+    get_db=get_db,
+)
 ```
 
-This registers `GET /districts` and immediately supports:
+This registers:
 
 ```
 GET /districts?q=mar&sort=-name&page=2&items_per_page=20&is_active=true
+GET /districts/42
 ```
 
 ---
@@ -97,7 +107,7 @@ class DistrictSchema(BaseModel):
 # routes.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from crudite import list_endpoint, ListConfig
+from crudite import list_endpoint, ListConfig, read_endpoint, ReadConfig
 
 router = APIRouter()
 
@@ -135,11 +145,45 @@ list_endpoint(
     ),
     get_db=get_db,
 )
+
+read_endpoint(
+    router=router,
+    path="/districts/{id}",
+    model=District,
+    schema=DistrictSchema,
+    config=ReadConfig(
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:view"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+        summary="Get a district by ID",
+    ),
+    get_db=get_db,
+)
 ```
 
 ---
 
-## Response format
+## Read endpoint response format
+
+Read endpoints return the schema directly (no envelope):
+
+```json
+{ "id": 1, "name": "Montmartre", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" } }
+```
+
+Status codes:
+- **200** — object found and accessible
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or row-level permission check
+- **404** — no object with that primary key exists
+
+> Unlike the list endpoint (which silently filters out inaccessible rows), the read endpoint distinguishes between "does not exist" (404) and "exists but you cannot see it" (403).
+
+---
+
+## List endpoint response format
 
 All list endpoints return the same paginated envelope:
 
@@ -188,6 +232,128 @@ Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must 
 
 ---
 
+## Auto-join detection
+
+crudite inspects the Pydantic `schema` at registration time. Any field annotated with a `BaseModel` subclass is matched to a SQLAlchemy relationship by name:
+
+- `field: RelatedSchema` → **many-to-one / one-to-one** → `joinedload`
+- `field: list[RelatedSchema]` → **one-to-many** → `selectinload` (avoids cartesian products with pagination)
+
+Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship.
+
+---
+
+## Permissions
+
+crudite applies a two-layer permission model on both list and read endpoints.
+
+**1. Route-level** — checked once per request:
+```python
+permission_checker(current_user, config.permissions)  # must return True
+```
+Returns HTTP 403 on failure.
+
+**2. Row-level** — auto-detected from model attributes:
+
+| Model attribute | Condition |
+|---|---|
+| `tenant_id` column | user's `tenant_id` must match the row's `tenant_id` |
+| `allowed_users` relationship | user's `id` must appear in the row's `allowed_users` |
+
+When both are present they combine with **OR** — a row is accessible if the tenant matches *or* the user is explicitly listed.
+
+The enforcement mechanism differs by endpoint:
+
+| Endpoint | Row-level enforcement |
+|---|---|
+| `list_endpoint` | SQL `WHERE` clause — inaccessible rows are silently excluded |
+| `read_endpoint` | Python check after fetch — returns **403** if the object exists but is inaccessible |
+
+For `read_endpoint`, `allowed_users` is always `selectinload`-ed (even if absent from the response schema) so the membership check always has the data it needs.
+
+---
+
+## Custom filter functions
+
+For complex filtering logic that can't be expressed with `field__operator=value`:
+
+```python
+from sqlalchemy.sql import Select
+
+def active_this_week(query: Select, value: str, current_user) -> Select:
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    return query.where(MyModel.activated_at >= cutoff)
+
+config = ListConfig(
+    filterable_fields=["active_this_week"],
+    filter_fns={"active_this_week": active_this_week},
+)
+```
+
+Call: `GET /items?active_this_week=1`
+
+---
+
+## Hooks
+
+All hooks may be **sync or async** — crudite detects and awaits accordingly.
+
+### List endpoint hooks
+
+```python
+async def log_query(query: Select, request: Request, current_user) -> Select:
+    logger.info("list query by %s", current_user.id)
+    return query
+
+def redact_sensitive(rows: list, request: Request, current_user) -> list:
+    if not current_user.is_admin:
+        for row in rows:
+            row.secret = None
+    return rows
+
+config = ListConfig(
+    before_query=log_query,   # (query, request, current_user) -> query
+    after_query=redact_sensitive,  # (rows, request, current_user) -> rows
+)
+```
+
+### Read endpoint hooks
+
+```python
+async def log_read(query: Select, request: Request, current_user) -> Select:
+    logger.info("read query by %s", current_user.id)
+    return query
+
+def redact_single(row, request: Request, current_user):
+    if not current_user.is_admin:
+        row.secret = None
+    return row
+
+config = ReadConfig(
+    before_query=log_read,    # (query, request, current_user) -> query
+    after_query=redact_single,  # (row, request, current_user) -> row
+)
+```
+
+`before_query` runs before the database call. `after_query` receives the ORM object after the permission check passes, before serialization.
+
+---
+
+## Default sort
+
+Every model should declare `_order_fields` as a tuple of column names. This is used when the client sends no `?sort=` parameter:
+
+```python
+class District(Base):
+    ...
+    _order_fields = ("name",)  # always sort by name ASC when no sort param given
+```
+
+Sort columns always use `NULLS LAST`.
+
+---
+
 ## `ListConfig` reference
 
 ```python
@@ -224,96 +390,28 @@ class ListConfig:
     summary: str | None
 ```
 
-All callables may be **sync or async** — crudite detects and awaits accordingly.
-
 ---
 
-## Auto-join detection
-
-crudite inspects the Pydantic `schema` at registration time. Any field annotated with a `BaseModel` subclass is matched to a SQLAlchemy relationship by name:
-
-- `field: RelatedSchema` → **many-to-one / one-to-one** → `joinedload`
-- `field: list[RelatedSchema]` → **one-to-many** → `selectinload` (avoids cartesian products with pagination)
-
-Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship.
-
----
-
-## Permissions
-
-crudite applies a two-layer permission model:
-
-**1. Route-level** — checked once per request:
-```python
-permission_checker(current_user, config.permissions)  # must return True
-```
-Returns HTTP 403 on failure.
-
-**2. Row-level** — auto-applied as SQL WHERE conditions (never raises, just filters rows):
-
-| Model attribute | Condition added |
-|---|---|
-| `tenant_id` column | `model.tenant_id == current_user.tenant_id` |
-| `allowed_users` relationship | `model.allowed_users.any(User.id == current_user.id)` |
-
-When both are present, they combine with **OR** — a user sees a row if they belong to the right tenant *or* are explicitly in `allowed_users`.
-
----
-
-## Custom filter functions
-
-For complex filtering logic that can't be expressed with `field__operator=value`:
+## `ReadConfig` reference
 
 ```python
-from sqlalchemy.sql import Select
+@dataclass
+class ReadConfig:
+    # Auth
+    login_required: bool                # default True — 401 if no user
+    login_dep: Callable | None          # FastAPI dependency returning current_user
+    permissions: list[str]              # required permission strings
+    permission_checker: Callable | None # (current_user, list[str]) -> bool
 
-def active_this_week(query: Select, value: str, current_user) -> Select:
-    from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(days=7)
-    return query.where(MyModel.activated_at >= cutoff)
+    # Hooks
+    before_query: HookFn | None         # (query, request, current_user) -> query
+    after_query: ReadAfterFn | None     # (row, request, current_user) -> row
 
-config = ListConfig(
-    filterable_fields=["active_this_week"],
-    filter_fns={"active_this_week": active_this_week},
-)
+    # FastAPI
+    dependencies: list[Any]             # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
 ```
-
-Call: `GET /items?active_this_week=1`
-
----
-
-## Hooks
-
-```python
-async def log_query(query: Select, request: Request, current_user) -> Select:
-    logger.info("list query by %s", current_user.id)
-    return query
-
-def redact_sensitive(rows: list, request: Request, current_user) -> list:
-    if not current_user.is_admin:
-        for row in rows:
-            row.secret = None
-    return rows
-
-config = ListConfig(
-    before_query=log_query,
-    after_query=redact_sensitive,
-)
-```
-
----
-
-## Default sort
-
-Every model should declare `_order_fields` as a tuple of column names. This is used when the client sends no `?sort=` parameter:
-
-```python
-class District(Base):
-    ...
-    _order_fields = ("name",)  # always sort by name ASC when no sort param given
-```
-
-Sort columns always use `NULLS LAST`.
 
 ---
 
@@ -331,4 +429,20 @@ def list_endpoint(
 ) -> None:
 ```
 
-Join resolution and config validation run at **registration time** (once), not per request.
+---
+
+## `read_endpoint()` signature
+
+```python
+def read_endpoint(
+    router: APIRouter,
+    path: str,                  # must contain {id}
+    model: type[DeclarativeBase],
+    schema: type[BaseModel],
+    config: ReadConfig,
+    *,
+    get_db: Callable,           # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper (composite primary keys are not supported). Join resolution runs at **registration time** (once), not per request.

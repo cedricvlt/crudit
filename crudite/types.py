@@ -17,5 +17,8 @@ HookFn = Callable[[Select, Request, Any], Select]
 # (results, request, current_user) -> results
 AfterFn = Callable[[list[Any], Request, Any], list[Any]]
 
+# (row, request, current_user) -> row
+ReadAfterFn = Callable[[Any, Request, Any], Any]
+
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]

@@ -162,7 +162,7 @@ class DistrictSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 from fastapi import FastAPI
-from crudite import ListConfig, list_endpoint
+from crudite import ListConfig, ReadConfig, list_endpoint, read_endpoint
 
 
 def make_app(engine, config: ListConfig, current_user: Any = None) -> FastAPI:
@@ -189,9 +189,41 @@ def make_app(engine, config: ListConfig, current_user: Any = None) -> FastAPI:
     return app
 
 
+def make_read_app(engine, config: ReadConfig, current_user: Any = None) -> FastAPI:
+    app = FastAPI()
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            yield session
+
+    async def get_current_user() -> Any:
+        return current_user
+
+    config.login_dep = get_current_user
+
+    read_endpoint(
+        router=app.router,
+        path="/districts/{id}",
+        model=District,
+        schema=DistrictSchema,
+        config=config,
+        get_db=get_db,
+    )
+    return app
+
+
 @pytest_asyncio.fixture
 def make_client(engine):
     async def _make_client(config: ListConfig, current_user: Any = None) -> AsyncClient:
         app = make_app(engine, config, current_user)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     return _make_client
+
+
+@pytest_asyncio.fixture
+def make_read_client(engine):
+    async def _make_read_client(config: ReadConfig, current_user: Any = None) -> AsyncClient:
+        app = make_read_app(engine, config, current_user)
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    return _make_read_client
