@@ -9,6 +9,27 @@ from sqlalchemy.sql import Select
 from crudit.joins import resolve_nested_column
 from crudit.types import FilterFn
 
+
+def apply_path_filters(
+    query: Select,
+    model: type[DeclarativeBase],
+    path_filters: dict[str, str],
+    path_params: dict[str, Any],
+) -> Select:
+    for param_name, field_name in path_filters.items():
+        value = path_params.get(param_name)
+        if value is None:
+            raise HTTPException(
+                status_code=400, detail=f"Missing path param '{param_name}'."
+            )
+        col = getattr(model, field_name, None)
+        if col is None:
+            raise HTTPException(
+                status_code=500, detail=f"Model field '{field_name}' not found."
+            )
+        query = query.where(col == value)
+    return query
+
 _RESERVED_PARAMS = frozenset(
     {"sort", "page", "items_per_page", "offset", "limit", "q", "count_only"}
 )

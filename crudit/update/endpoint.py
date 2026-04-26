@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -11,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.joins import resolve_joins
-from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
 from crudit.update.config import UpdateConfig
+from crudit.utils import call_hook
 
 
 def update_endpoint(
@@ -57,11 +57,9 @@ def update_endpoint(
         current_user: Any = user_dep,
     ) -> Any:
         # 1. Route-level auth / permission check
-        if _config.login_required and current_user is None:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        if _config.permissions and _config.permission_checker is not None:
-            if not _config.permission_checker(current_user, _config.permissions):
-                raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        check_route_permissions(
+            current_user, _config.login_required, _config.permissions, _config.permission_checker
+        )
 
         # 2. Fetch existing object
         pk_value = request.path_params.get("id")
@@ -111,18 +109,11 @@ def update_endpoint(
 
         # 7. Field setters (can be async)
         for field_name, setter in _config.field_setters.items():
-            if asyncio.iscoroutinefunction(setter):
-                value = await setter(obj, request, current_user)
-            else:
-                value = setter(obj, request, current_user)
-            patch_data[field_name] = value
+            patch_data[field_name] = await call_hook(setter, obj, request, current_user)
 
         # 8. before_update hook — receives the existing obj and the full patch dict
         if _config.before_update is not None:
-            if asyncio.iscoroutinefunction(_config.before_update):
-                patch_data = await _config.before_update(obj, patch_data, request, current_user)
-            else:
-                patch_data = _config.before_update(obj, patch_data, request, current_user)
+            patch_data = await call_hook(_config.before_update, obj, patch_data, request, current_user)
 
         # 9. Apply patch to ORM object
         for attr, value in patch_data.items():
@@ -142,10 +133,7 @@ def update_endpoint(
 
         # 12. after_update hook
         if _config.after_update is not None:
-            if asyncio.iscoroutinefunction(_config.after_update):
-                obj = await _config.after_update(obj, request, current_user)
-            else:
-                obj = _config.after_update(obj, request, current_user)
+            obj = await call_hook(_config.after_update, obj, request, current_user)
 
         return _read_schema.model_validate(obj, from_attributes=True)
 

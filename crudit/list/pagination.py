@@ -5,6 +5,15 @@ from dataclasses import dataclass
 from sqlalchemy.sql import Select
 
 
+def _int_or_none(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 @dataclass
 class PaginationResult:
     sql_offset: int

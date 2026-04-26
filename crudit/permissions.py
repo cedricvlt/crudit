@@ -10,6 +10,20 @@ from sqlalchemy.sql import Select
 from crudit.types import PermissionChecker
 
 
+def check_route_permissions(
+    current_user: Any,
+    login_required: bool,
+    permissions: list[str],
+    permission_checker: PermissionChecker | None,
+) -> None:
+    """Route-level auth check. Raises 401/403 on failure."""
+    if login_required and current_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    if permissions and permission_checker is not None:
+        if not permission_checker(current_user, permissions):
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+
+
 def check_object_permissions(
     obj: Any,
     model: type[DeclarativeBase],
@@ -19,15 +33,10 @@ def check_object_permissions(
     permission_checker: PermissionChecker | None,
 ) -> None:
     """Object-level permission check for read endpoints. Raises 401/403 on failure."""
-    if login_required and current_user is None:
-        raise HTTPException(status_code=401, detail="Authentication required.")
+    check_route_permissions(current_user, login_required, permissions, permission_checker)
 
     if current_user is None:
         return
-
-    if permissions and permission_checker is not None:
-        if not permission_checker(current_user, permissions):
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
     # Row-level: mirrors the SQL or_(*conditions) from apply_permissions
     checks = _build_object_level_checks(model, current_user)
@@ -43,15 +52,10 @@ def apply_permissions(
     permissions: list[str],
     permission_checker: PermissionChecker | None,
 ) -> Select:
-    if login_required and current_user is None:
-        raise HTTPException(status_code=401, detail="Authentication required.")
+    check_route_permissions(current_user, login_required, permissions, permission_checker)
 
     if current_user is None:
         return query
-
-    if permissions and permission_checker is not None:
-        if not permission_checker(current_user, permissions):
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
     conditions = _build_row_level_conditions(model, current_user)
     if conditions:

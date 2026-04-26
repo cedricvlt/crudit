@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,6 +12,7 @@ from crudit.exceptions import CruditConfigError
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, has_allowed_users_relationship
 from crudit.read.config import ReadConfig
+from crudit.utils import call_hook
 
 
 def read_endpoint(
@@ -67,12 +67,8 @@ def read_endpoint(
         if options:
             query = query.options(*options)
 
-        # before_query hook
         if _config.before_query is not None:
-            if asyncio.iscoroutinefunction(_config.before_query):
-                query = await _config.before_query(query, request, current_user)
-            else:
-                query = _config.before_query(query, request, current_user)
+            query = await call_hook(_config.before_query, query, request, current_user)
 
         result = await db.execute(query)
         obj = result.scalars().unique().one_or_none()
@@ -89,12 +85,8 @@ def read_endpoint(
             _config.permission_checker,
         )
 
-        # after_query hook
         if _config.after_query is not None:
-            if asyncio.iscoroutinefunction(_config.after_query):
-                obj = await _config.after_query(obj, request, current_user)
-            else:
-                obj = _config.after_query(obj, request, current_user)
+            obj = await call_hook(_config.after_query, obj, request, current_user)
 
         return _schema.model_validate(obj, from_attributes=True)
 

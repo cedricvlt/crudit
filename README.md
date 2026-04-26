@@ -339,8 +339,6 @@ For each POST request, crudit executes the following steps in order:
 
 ---
 
----
-
 ## Update endpoint
 
 `update_endpoint` registers a `PATCH` route that partially updates an existing object and returns it as the read schema with **HTTP 200**.
@@ -524,62 +522,6 @@ For each POST request, crudit executes the following steps in order:
 6. `await db.commit()`
 7. Call `after_reorder(objects, request, current_user)`
 8. Return **HTTP 204 No Content**
-
----
-
-## Reorder endpoint response format
-
-Reorder endpoints return an empty body with **HTTP 204 No Content**.
-
-Status codes:
-- **204** — positions updated successfully
-- **401** — `login_required=True` and no authenticated user
-- **403** — user authenticated but fails route-level or row-level permission check
-- **404** — one or more IDs not found or outside the path-filtered scope
-- **422** — request body failed schema validation
-
----
-
-## `ReorderConfig` reference
-
-```python
-@dataclass
-class ReorderConfig:
-    # Path parameters
-    path_filters: dict[str, str]         # {"url_param": "model_field"}
-
-    # Auth
-    login_required: bool                 # default True — 401 if no user
-    login_dep: Callable | None           # FastAPI dependency returning current_user
-    permissions: list[str]               # required permission strings
-    permission_checker: Callable | None  # (current_user, list[str]) -> bool
-
-    # Hooks
-    before_reorder: ReorderHookFn | None  # (objects, request, current_user) -> None — raise to abort
-    after_reorder: ReorderHookFn | None   # (objects, request, current_user) -> None — after commit
-
-    # FastAPI
-    dependencies: list[Any]              # extra Depends() to attach to the route
-    tags: list[str]
-    summary: str | None
-```
-
----
-
-## `reorder_endpoint()` signature
-
-```python
-def reorder_endpoint(
-    router: APIRouter,
-    path: str,
-    model: type[DeclarativeBase],  # must have a sort_order column
-    config: ReorderConfig,
-    *,
-    get_db: Callable,              # FastAPI dependency returning AsyncSession
-) -> None:
-```
-
-The model must have a `sort_order` column — a `ValueError` is raised at registration time if it is absent. The primary key is auto-detected from the SQLAlchemy mapper. No response schema is required.
 
 ---
 
@@ -1167,3 +1109,59 @@ def delete_endpoint(
 ```
 
 The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper. No response schema is required — the endpoint always returns 204 No Content.
+
+---
+
+## `ReorderConfig` reference
+
+```python
+@dataclass
+class ReorderConfig:
+    # Path parameters
+    path_filters: dict[str, str]         # {"url_param": "model_field"}
+
+    # Auth
+    login_required: bool                 # default True — 401 if no user
+    login_dep: Callable | None           # FastAPI dependency returning current_user
+    permissions: list[str]               # required permission strings
+    permission_checker: Callable | None  # (current_user, list[str]) -> bool
+
+    # Hooks
+    before_reorder: ReorderHookFn | None  # (objects, request, current_user) -> None — raise to abort
+    after_reorder: ReorderHookFn | None   # (objects, request, current_user) -> None — after commit
+
+    # FastAPI
+    dependencies: list[Any]              # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+---
+
+## `reorder_endpoint()` signature
+
+```python
+def reorder_endpoint(
+    router: APIRouter,
+    path: str,
+    model: type[DeclarativeBase],  # must have a sort_order column
+    config: ReorderConfig,
+    *,
+    get_db: Callable,              # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+The model must have a `sort_order` column — a `ValueError` is raised at registration time if it is absent. The primary key is auto-detected from the SQLAlchemy mapper. No response schema is required.
+
+---
+
+## Reorder endpoint response format
+
+Reorder endpoints return an empty body with **HTTP 204 No Content**.
+
+Status codes:
+- **204** — positions updated successfully
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or row-level permission check
+- **404** — one or more IDs not found or outside the path-filtered scope
+- **422** — request body failed schema validation

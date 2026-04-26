@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -9,9 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
-from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.list.filters import apply_path_filters
+from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
 from crudit.reorder.config import ReorderConfig
+from crudit.utils import call_hook
 
 _ORDER_FIELD = "sort_order"
 
@@ -58,11 +59,9 @@ def reorder_endpoint(
         current_user: Any = user_dep,
     ) -> Response:
         # 1. Route-level auth / permission check
-        if _config.login_required and current_user is None:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        if _config.permissions and _config.permission_checker is not None:
-            if not _config.permission_checker(current_user, _config.permissions):
-                raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        check_route_permissions(
+            current_user, _config.login_required, _config.permissions, _config.permission_checker
+        )
 
         # 2. Empty input — nothing to reorder
         if not body.ids:
@@ -73,19 +72,7 @@ def reorder_endpoint(
         path_params = dict(request.path_params)
 
         query = select(_model).where(pk_col.in_(body.ids))
-
-        for param_name, field_name in _config.path_filters.items():
-            value = path_params.get(param_name)
-            if value is None:
-                raise HTTPException(
-                    status_code=400, detail=f"Missing path param '{param_name}'."
-                )
-            col = getattr(_model, field_name, None)
-            if col is None:
-                raise HTTPException(
-                    status_code=500, detail=f"Model field '{field_name}' not found."
-                )
-            query = query.where(col == value)
+        query = apply_path_filters(query, _model, _config.path_filters, path_params)
 
         if load_allowed_users:
             query = query.options(selectinload(getattr(_model, "allowed_users")))
@@ -118,10 +105,7 @@ def reorder_endpoint(
 
         # 6. before_reorder hook
         if _config.before_reorder is not None:
-            if asyncio.iscoroutinefunction(_config.before_reorder):
-                await _config.before_reorder(ordered_objects, request, current_user)
-            else:
-                _config.before_reorder(ordered_objects, request, current_user)
+            await call_hook(_config.before_reorder, ordered_objects, request, current_user)
 
         # 7. Assign sort_order by position (0-based)
         for position, obj in enumerate(ordered_objects):
@@ -131,10 +115,7 @@ def reorder_endpoint(
 
         # 8. after_reorder hook
         if _config.after_reorder is not None:
-            if asyncio.iscoroutinefunction(_config.after_reorder):
-                await _config.after_reorder(ordered_objects, request, current_user)
-            else:
-                _config.after_reorder(ordered_objects, request, current_user)
+            await call_hook(_config.after_reorder, ordered_objects, request, current_user)
 
         return Response(status_code=204)
 

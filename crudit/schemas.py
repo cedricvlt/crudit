@@ -15,10 +15,6 @@ class PaginatedResponse(BaseModel, Generic[T]):
     items_per_page: int
 
 
-class CountOnlyResponse(BaseModel):
-    total_count: int
-
-
 class OptionItem(BaseModel):
     id: Any
     label: str

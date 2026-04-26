@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,13 +10,14 @@ from sqlalchemy.orm import DeclarativeBase
 
 from crudit.exceptions import CruditConfigError
 from crudit.joins import JoinInfo, collect_needed_joins, resolve_joins
-from crudit.list.filters import apply_default_filters, apply_filters
-from crudit.list.pagination import apply_pagination, resolve_pagination
+from crudit.list.filters import apply_default_filters, apply_filters, apply_path_filters
+from crudit.list.pagination import _int_or_none, apply_pagination, resolve_pagination
 from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OptionItem, PaginatedResponse
+from crudit.utils import call_hook
 
 
 def options_endpoint(
@@ -74,25 +74,8 @@ def options_endpoint(
         limit = _int_or_none(raw_params.get("limit"))
 
         query = select(_model)
-
-        # Path filters
-        for param_name, field_name in _config.path_filters.items():
-            value = path_params.get(param_name)
-            if value is None:
-                raise HTTPException(
-                    status_code=400, detail=f"Missing path param '{param_name}'."
-                )
-            col = getattr(_model, field_name, None)
-            if col is None:
-                raise HTTPException(
-                    status_code=500, detail=f"Model field '{field_name}' not found."
-                )
-            query = query.where(col == value)
-
-        # Default filters
+        query = apply_path_filters(query, _model, _config.path_filters, path_params)
         query = apply_default_filters(query, _model, _config.default_filters)
-
-        # Permissions
         query = apply_permissions(
             query,
             _model,
@@ -101,8 +84,6 @@ def options_endpoint(
             _config.permissions,
             _config.permission_checker,
         )
-
-        # Search
         query = apply_search(
             query,
             q_param,
@@ -113,7 +94,6 @@ def options_endpoint(
             current_user,
         )
 
-        # Explicit joins needed for nested filter/sort columns
         explicitly_joined: set[str] = collect_needed_joins(
             raw_params, sort_param, _join_info
         )
@@ -121,7 +101,6 @@ def options_endpoint(
             rel_attr = getattr(_model, rel_name)
             query = query.join(rel_attr, isouter=True)
 
-        # User filters
         query = apply_filters(
             query,
             raw_params,
@@ -132,18 +111,13 @@ def options_endpoint(
             current_user,
         )
 
-        # before_query hook
         if _config.before_query is not None:
-            if asyncio.iscoroutinefunction(_config.before_query):
-                query = await _config.before_query(query, request, current_user)
-            else:
-                query = _config.before_query(query, request, current_user)
+            query = await call_hook(_config.before_query, query, request, current_user)
 
         # COUNT (before sort/pagination)
         count_query = select(func.count()).select_from(query.subquery())
         total_count = (await db.execute(count_query)).scalar_one()
 
-        # Sort
         query = apply_sort(
             query,
             sort_param,
@@ -152,11 +126,9 @@ def options_endpoint(
             _config.sortable_fields,
         )
 
-        # Pagination
         pagination = resolve_pagination(page, items_per_page, offset, limit)
         query = apply_pagination(query, pagination)
 
-        # Eager loads
         options = _join_info.eager_load_options(_model, explicitly_joined)
         if options:
             query = query.options(*options)
@@ -164,14 +136,9 @@ def options_endpoint(
         result = await db.execute(query)
         rows = list(result.scalars().unique())
 
-        # after_query hook
         if _config.after_query is not None:
-            if asyncio.iscoroutinefunction(_config.after_query):
-                rows = await _config.after_query(rows, request, current_user)
-            else:
-                rows = _config.after_query(rows, request, current_user)
+            rows = await call_hook(_config.after_query, rows, request, current_user)
 
-        # Build option items
         data = [_build_item(row, _config) for row in rows]
 
         return PaginatedResponse(
@@ -199,12 +166,3 @@ def _build_item(row: Any, config: OptionsConfig) -> OptionItem:
     else:
         label = str(getattr(row, config.label_field, "") or "")
     return OptionItem(id=row.id, label=label)
-
-
-def _int_or_none(value: str | None) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None

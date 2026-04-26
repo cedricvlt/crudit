@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -12,8 +11,9 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.create.config import CreateConfig
 from crudit.joins import resolve_joins
-from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.utils import call_hook
 
 
 def create_endpoint(
@@ -52,11 +52,9 @@ def create_endpoint(
         current_user: Any = user_dep,
     ) -> Any:
         # 1. Role-level auth/permission check
-        if _config.login_required and current_user is None:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        if _config.permissions and _config.permission_checker is not None:
-            if not _config.permission_checker(current_user, _config.permissions):
-                raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        check_route_permissions(
+            current_user, _config.login_required, _config.permissions, _config.permission_checker
+        )
 
         # 2. Resolve parents: existence check + row-level permission on each parent
         parent_values: dict[str, Any] = {}
@@ -111,18 +109,11 @@ def create_endpoint(
 
         # 7. Field setters (can be async)
         for field_name, setter in _config.field_setters.items():
-            if asyncio.iscoroutinefunction(setter):
-                value = await setter(obj, request, current_user)
-            else:
-                value = setter(obj, request, current_user)
-            setattr(obj, field_name, value)
+            setattr(obj, field_name, await call_hook(setter, obj, request, current_user))
 
         # 8. before_create hook
         if _config.before_create is not None:
-            if asyncio.iscoroutinefunction(_config.before_create):
-                obj = await _config.before_create(obj, request, current_user)
-            else:
-                obj = _config.before_create(obj, request, current_user)
+            obj = await call_hook(_config.before_create, obj, request, current_user)
 
         # 9. Persist
         db.add(obj)
@@ -140,10 +131,7 @@ def create_endpoint(
 
         # 11. after_create hook
         if _config.after_create is not None:
-            if asyncio.iscoroutinefunction(_config.after_create):
-                obj = await _config.after_create(obj, request, current_user)
-            else:
-                obj = _config.after_create(obj, request, current_user)
+            obj = await call_hook(_config.after_create, obj, request, current_user)
 
         return _read_schema.model_validate(obj, from_attributes=True)
 

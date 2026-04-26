@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -9,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.delete.config import DeleteConfig
-from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.utils import call_hook
 
 
 def delete_endpoint(
@@ -42,11 +42,9 @@ def delete_endpoint(
         current_user: Any = user_dep,
     ) -> Response:
         # 1. Route-level auth / permission check
-        if _config.login_required and current_user is None:
-            raise HTTPException(status_code=401, detail="Authentication required.")
-        if _config.permissions and _config.permission_checker is not None:
-            if not _config.permission_checker(current_user, _config.permissions):
-                raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        check_route_permissions(
+            current_user, _config.login_required, _config.permissions, _config.permission_checker
+        )
 
         # 2. Fetch object
         pk_value = request.path_params.get("id")
@@ -77,10 +75,7 @@ def delete_endpoint(
 
         # 4. before_delete hook — can raise to abort
         if _config.before_delete is not None:
-            if asyncio.iscoroutinefunction(_config.before_delete):
-                await _config.before_delete(obj, request, current_user)
-            else:
-                _config.before_delete(obj, request, current_user)
+            await call_hook(_config.before_delete, obj, request, current_user)
 
         # 5. Delete and commit
         await db.delete(obj)
@@ -88,10 +83,7 @@ def delete_endpoint(
 
         # 6. after_delete hook — obj is detached but attributes are still accessible
         if _config.after_delete is not None:
-            if asyncio.iscoroutinefunction(_config.after_delete):
-                await _config.after_delete(obj, request, current_user)
-            else:
-                _config.after_delete(obj, request, current_user)
+            await call_hook(_config.after_delete, obj, request, current_user)
 
         return Response(status_code=204)
 
