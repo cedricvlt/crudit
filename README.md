@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List, read, create, and update endpoints implemented. Delete coming next.
+> **Status:** List, read, create, update, and delete endpoints implemented.
 
 ---
 
@@ -107,7 +107,7 @@ class DistrictSchema(BaseModel):
 # routes.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_endpoint, CreateConfig, ParentParam
+from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_endpoint, CreateConfig, ParentParam, update_endpoint, UpdateConfig, delete_endpoint, DeleteConfig
 
 router = APIRouter()
 
@@ -195,6 +195,21 @@ update_endpoint(
         permission_checker=check_permissions,
         tags=["Districts"],
         summary="Partially update a district",
+    ),
+    get_db=get_db,
+)
+
+delete_endpoint(
+    router=router,
+    path="/districts/{id}",
+    model=District,
+    config=DeleteConfig(
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:delete"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+        summary="Delete a district",
     ),
     get_db=get_db,
 )
@@ -391,6 +406,54 @@ For each PATCH request, crudit executes the following steps in order:
 11. Reload object with eager-loaded relationships (from `read_schema`)
 12. Call `after_update(obj, request, current_user) -> obj`
 13. Return `read_schema.model_validate(obj)` with **HTTP 200**
+
+---
+
+## Delete endpoint
+
+`delete_endpoint` registers a `DELETE` route that removes an existing object and returns **204 No Content**.
+
+### Hooks
+
+```python
+def before(obj, request, current_user):
+    if obj.is_protected:
+        raise HTTPException(status_code=409, detail="Object is protected.")
+
+async def after(obj, request, current_user):
+    await audit_log.record_deletion(obj.id, current_user.id)
+
+DeleteConfig(
+    before_delete=before,  # (obj, request, current_user) -> None  — runs before db.delete(); raise to abort
+    after_delete=after,    # (obj, request, current_user) -> None  — runs after commit; obj is detached but attributes are still readable
+)
+```
+
+`before_delete` receives the ORM object before deletion. Raise any exception (e.g. `HTTPException`) to abort the operation — nothing is deleted. `after_delete` receives the same ORM object after the transaction has committed; the object is detached from the session but its Python attributes remain accessible for logging or notifications.
+
+### Execution order
+
+For each DELETE request, crudit executes the following steps in order:
+
+1. Route-level auth / permission check
+2. Fetch object by PK — returns **404** if not found
+3. Object-level permission check (`tenant_id` / `allowed_users`)
+4. Call `before_delete(obj, request, current_user)` — raise to abort
+5. `await db.delete(obj)` + `await db.commit()`
+6. Call `after_delete(obj, request, current_user)`
+7. Return **HTTP 204 No Content**
+
+---
+
+## Delete endpoint response format
+
+Delete endpoints return an empty body with **HTTP 204 No Content**.
+
+Status codes:
+- **204** — object deleted successfully
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or row-level permission check
+- **404** — no object with that primary key exists
 
 ---
 
@@ -811,3 +874,43 @@ def update_endpoint(
 ```
 
 The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper. Join resolution for `read_schema` runs at **registration time** (once). The `update_schema` is used for OpenAPI request body docs and Pydantic validation; fields not present in the request body are not applied to the object.
+
+---
+
+## `DeleteConfig` reference
+
+```python
+@dataclass
+class DeleteConfig:
+    # Auth
+    login_required: bool                # default True — 401 if no user
+    login_dep: Callable | None          # FastAPI dependency returning current_user
+    permissions: list[str]              # required permission strings
+    permission_checker: Callable | None # (current_user, list[str]) -> bool
+
+    # Hooks
+    before_delete: DeleteHookFn | None  # (obj, request, current_user) -> None — raise to abort
+    after_delete: DeleteHookFn | None   # (obj, request, current_user) -> None — obj is detached
+
+    # FastAPI
+    dependencies: list[Any]             # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+---
+
+## `delete_endpoint()` signature
+
+```python
+def delete_endpoint(
+    router: APIRouter,
+    path: str,                  # must contain {id}
+    model: type[DeclarativeBase],
+    config: DeleteConfig,
+    *,
+    get_db: Callable,           # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper. No response schema is required — the endpoint always returns 204 No Content.

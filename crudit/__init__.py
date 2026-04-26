@@ -1,5 +1,7 @@
 from crudit.create.config import CreateConfig, ParentParam
 from crudit.create.endpoint import create_endpoint
+from crudit.delete.config import DeleteConfig
+from crudit.delete.endpoint import delete_endpoint
 from crudit.exceptions import CruditConfigError, CruditForbidden
 from crudit.list.config import ListConfig
 from crudit.list.endpoint import list_endpoint
@@ -13,6 +15,8 @@ __all__ = [
     "create_endpoint",
     "CreateConfig",
     "ParentParam",
+    "delete_endpoint",
+    "DeleteConfig",
     "list_endpoint",
     "ListConfig",
     "read_endpoint",

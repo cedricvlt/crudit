@@ -32,5 +32,8 @@ UpdateBeforeHookFn = Callable[[Any, dict[str, Any], Request, Any], dict[str, Any
 # (obj, request, current_user) -> obj  (update after hook)
 UpdateAfterHookFn = Callable[[Any, Request, Any], Any]
 
+# (obj, request, current_user) -> None  (delete hooks)
+DeleteHookFn = Callable[[Any, Request, Any], None]
+
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]
