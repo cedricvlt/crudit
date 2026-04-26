@@ -17,7 +17,7 @@ from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OptionItem, PaginatedResponse
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 
 def options_endpoint(
@@ -149,14 +149,16 @@ def options_endpoint(
             items_per_page=pagination.items_per_page,
         )
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
         methods=["GET"],
         response_model=PaginatedResponse[OptionItem],
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"List {model_name} option items for selection.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(403),
     )
 
 

@@ -12,7 +12,7 @@ from crudit.exceptions import CruditConfigError
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, has_allowed_users_relationship
 from crudit.read.config import ReadConfig
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 
 def read_endpoint(
@@ -90,14 +90,16 @@ def read_endpoint(
 
         return _schema.model_validate(obj, from_attributes=True)
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
         methods=["GET"],
         response_model=_schema,
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"Retrieve a single {model_name} row from the database.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(400, 403, 404),
     )
 
 

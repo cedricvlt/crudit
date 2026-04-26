@@ -12,7 +12,7 @@ from crudit.list.filters import apply_path_filters
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
 from crudit.reorder.config import ReorderConfig
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 _ORDER_FIELD = "sort_order"
 
@@ -119,6 +119,7 @@ def reorder_endpoint(
 
         return Response(status_code=204)
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
@@ -126,6 +127,7 @@ def reorder_endpoint(
         status_code=204,
         response_class=Response,
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"Reorder {model_name} rows by providing an ordered list of IDs.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(403, 404),
     )

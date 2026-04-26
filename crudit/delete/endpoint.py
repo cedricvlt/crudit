@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.delete.config import DeleteConfig
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 
 def delete_endpoint(
@@ -87,6 +87,7 @@ def delete_endpoint(
 
         return Response(status_code=204)
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
@@ -94,6 +95,7 @@ def delete_endpoint(
         status_code=204,
         response_class=Response,
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"Delete a {model_name} row from the database.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(400, 403, 404),
     )

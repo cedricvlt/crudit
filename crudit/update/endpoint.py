@@ -13,7 +13,7 @@ from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
 from crudit.update.config import UpdateConfig
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 
 def update_endpoint(
@@ -139,6 +139,7 @@ def update_endpoint(
 
     _handler.__annotations__["body"] = _update_schema
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
@@ -146,6 +147,7 @@ def update_endpoint(
         response_model=_read_schema,
         status_code=200,
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"Update an existing {model_name} row in the database.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(400, 403, 404),
     )

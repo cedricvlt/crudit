@@ -17,7 +17,7 @@ from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.permissions import apply_permissions
 from crudit.schemas import PaginatedResponse
-from crudit.utils import call_hook
+from crudit.utils import call_hook, get_error_responses
 
 
 def list_endpoint(
@@ -141,12 +141,14 @@ def list_endpoint(
             items_per_page=pagination.items_per_page,
         )
 
+    model_name = model.__name__
     router.add_api_route(
         path,
         _handler,
         methods=["GET"],
         response_model=PaginatedResponse[_schema],
         tags=_config.tags or None,
-        summary=_config.summary,
+        summary=_config.summary or f"List {model_name} rows from the database.",
         dependencies=list(_config.dependencies),
+        responses=get_error_responses(403),
     )
