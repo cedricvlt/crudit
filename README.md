@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List, read, and create endpoints implemented. Update / delete coming next.
+> **Status:** List, read, create, and update endpoints implemented. Delete coming next.
 
 ---
 
@@ -181,6 +181,23 @@ create_endpoint(
     ),
     get_db=get_db,
 )
+
+update_endpoint(
+    router=router,
+    path="/districts/{id}",
+    model=District,
+    update_schema=DistrictUpdateSchema,   # partial input body schema (all fields optional)
+    read_schema=DistrictSchema,           # response schema (with joins)
+    config=UpdateConfig(
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:edit"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+        summary="Partially update a district",
+    ),
+    get_db=get_db,
+)
 ```
 
 ---
@@ -291,6 +308,92 @@ For each POST request, crudit executes the following steps in order:
 
 ---
 
+---
+
+## Update endpoint
+
+`update_endpoint` registers a `PATCH` route that partially updates an existing object and returns it as the read schema with **HTTP 200**.
+
+Only fields present in the request body are applied (`exclude_unset` semantics). Fields absent from the body are left unchanged.
+
+### Schemas
+
+Two separate schemas are required:
+
+```python
+class DistrictUpdateSchema(BaseModel):
+    name: str | None = None        # all fields optional for PATCH
+    is_active: bool | None = None
+
+class DistrictSchema(BaseModel):   # reuse the read schema
+    id: int
+    name: str
+    is_active: bool
+    city_id: int
+    city: CitySchema               # joined relationship — loaded automatically
+    updated_at: datetime | None = None
+    updated_by: int | None = None
+```
+
+### Auto-complete fields
+
+| Field | Condition | Value |
+|---|---|---|
+| `updated_at` | column exists and has no `server_default` | `datetime.now(timezone.utc)` |
+| `updated_by` | column exists and user is authenticated | `current_user.id` |
+
+Auto-complete fields are injected into the patch dict before field setters and the `before_update` hook run, so they can be inspected or overridden.
+
+### Field setters
+
+Identical interface to `CreateConfig.field_setters`. Setters receive the **existing** ORM object, the request, and the current user. Their return value is merged into the patch dict.
+
+```python
+UpdateConfig(
+    field_setters={"last_modified_by_ip": lambda obj, req, user: req.client.host},
+)
+```
+
+### Hooks
+
+```python
+def before(obj, patch_data, request, current_user):
+    if "name" in patch_data:
+        patch_data["name"] = patch_data["name"].strip()
+    return patch_data   # must return the (possibly modified) patch dict
+
+async def after(obj, request, current_user):
+    await notify_updated(obj.id)
+    return obj
+
+UpdateConfig(
+    before_update=before,  # (obj, patch_data, request, current_user) -> patch_data
+    after_update=after,    # (obj, request, current_user) -> obj
+)
+```
+
+`before_update` receives the **existing** ORM object (before any changes) and the full patch dict (body fields + auto-complete + setters). It must return the patch dict. `after_update` receives the reloaded object after the transaction has committed.
+
+### Execution order
+
+For each PATCH request, crudit executes the following steps in order:
+
+1. Route-level auth / permission check
+2. Fetch object by PK — returns **404** if not found
+3. Object-level permission check (`tenant_id` / `allowed_users`)
+4. Parse body with `update_schema` → `patch_data` (only fields the client sent)
+5. Auto-fill `updated_at` into `patch_data` (if applicable)
+6. Auto-fill `updated_by` into `patch_data` (if applicable)
+7. Run `field_setters` → merge results into `patch_data`
+8. Call `before_update(obj, patch_data, request, current_user) -> patch_data`
+9. Apply `patch_data` to ORM object (`setattr` for each key)
+10. `db.add(obj)` + `await db.commit()`
+11. Reload object with eager-loaded relationships (from `read_schema`)
+12. Call `after_update(obj, request, current_user) -> obj`
+13. Return `read_schema.model_validate(obj)` with **HTTP 200**
+
+---
+
 ## Create endpoint response format
 
 Create endpoints return the created object serialised as `read_schema` (same structure as the read endpoint), with all joined relationships loaded:
@@ -305,6 +408,23 @@ Status codes:
 - **401** — `login_required=True` and no authenticated user
 - **403** — user authenticated but fails route-level or parent row-level permission check
 - **404** — a declared parent object was not found
+- **422** — request body failed schema validation
+
+---
+
+## Update endpoint response format
+
+Update endpoints return the updated object serialised as `read_schema`, with all joined relationships loaded:
+
+```json
+{ "id": 1, "name": "Renamed", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" }, "updated_at": "2026-04-26T10:00:00Z", "updated_by": 1 }
+```
+
+Status codes:
+- **200** — object updated successfully
+- **401** — `login_required=True` and no authenticated user
+- **403** — user authenticated but fails route-level or row-level permission check
+- **404** — no object with that primary key exists
 - **422** — request body failed schema validation
 
 ---
@@ -646,3 +766,48 @@ def create_endpoint(
 ```
 
 Join resolution for `read_schema` runs at **registration time** (once). The primary key is auto-detected from the SQLAlchemy mapper. The `create_schema` is used for OpenAPI request body docs and Pydantic validation.
+
+---
+
+## `UpdateConfig` reference
+
+```python
+@dataclass
+class UpdateConfig:
+    # Auto-complete field setters
+    field_setters: dict[str, FieldSetterFn]   # field -> (obj, request, user) -> value
+
+    # Auth
+    login_required: bool                      # default True — 401 if no user
+    login_dep: Callable | None                # FastAPI dependency returning current_user
+    permissions: list[str]                    # required permission strings
+    permission_checker: Callable | None       # (current_user, list[str]) -> bool
+
+    # Hooks
+    before_update: UpdateBeforeHookFn | None  # (obj, patch_data, request, current_user) -> patch_data
+    after_update: UpdateAfterHookFn | None    # (obj, request, current_user) -> obj
+
+    # FastAPI
+    dependencies: list[Any]                   # extra Depends() to attach to the route
+    tags: list[str]
+    summary: str | None
+```
+
+---
+
+## `update_endpoint()` signature
+
+```python
+def update_endpoint(
+    router: APIRouter,
+    path: str,                   # must contain {id}
+    model: type[DeclarativeBase],
+    update_schema: type[BaseModel],  # partial input body schema (all fields typically optional)
+    read_schema: type[BaseModel],    # response schema (may include joined relations)
+    config: UpdateConfig,
+    *,
+    get_db: Callable,                # FastAPI dependency returning AsyncSession
+) -> None:
+```
+
+The path must contain `{id}`. The primary key column is auto-detected from the SQLAlchemy mapper. Join resolution for `read_schema` runs at **registration time** (once). The `update_schema` is used for OpenAPI request body docs and Pydantic validation; fields not present in the request body are not applied to the object.

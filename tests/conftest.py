@@ -68,6 +68,8 @@ class District(Base):
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     city: Mapped[City] = relationship("City", back_populates="districts")
     allowed_users: Mapped[list[User]] = relationship(
@@ -154,6 +156,8 @@ class DistrictSchema(BaseModel):
     city: CitySchema
     created_at: datetime | None = None
     created_by: int | None = None
+    updated_at: datetime | None = None
+    updated_by: int | None = None
 
 
 class DistrictCreateSchema(BaseModel):
@@ -166,3 +170,8 @@ class DistrictCreateFlatSchema(BaseModel):
     name: str
     is_active: bool = True
     city_id: int
+
+
+class DistrictUpdateSchema(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None

@@ -26,5 +26,11 @@ CreateHookFn = Callable[[Any, Request, Any], Any]
 # (obj, request, current_user) -> value  (field setter)
 FieldSetterFn = Callable[[Any, Request, Any], Any]
 
+# (obj, patch_data, request, current_user) -> patch_data  (update before hook)
+UpdateBeforeHookFn = Callable[[Any, dict[str, Any], Request, Any], dict[str, Any]]
+
+# (obj, request, current_user) -> obj  (update after hook)
+UpdateAfterHookFn = Callable[[Any, Request, Any], Any]
+
 # (current_user, required_permissions) -> bool
 PermissionChecker = Callable[[Any, list[str]], bool]
