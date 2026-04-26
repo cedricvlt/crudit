@@ -1,4 +1,5 @@
 from crudit.create.config import CreateConfig, ParentParam
+from crudit.router import SharedConfig, crud_router
 from crudit.create.endpoint import create_endpoint
 from crudit.delete.config import DeleteConfig
 from crudit.delete.endpoint import delete_endpoint
@@ -35,4 +36,6 @@ __all__ = [
     "UpdateConfig",
     "CruditConfigError",
     "CruditForbidden",
+    "crud_router",
+    "SharedConfig",
 ]

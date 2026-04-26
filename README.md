@@ -233,6 +233,125 @@ reorder_endpoint(
 
 ---
 
+## crud_router
+
+`crud_router` is a one-call alternative to registering each endpoint individually. It returns a FastAPI `APIRouter` pre-configured with up to seven verbs.
+
+```python
+from fastapi import FastAPI
+from crudit import crud_router, SharedConfig, OptionsConfig
+
+app = FastAPI()
+
+router = crud_router(
+    model=District,
+
+    # --- schemas ---
+    list_item_schema=DistrictSchema,       # GET  /         (list)
+    read_schema=DistrictSchema,            # GET  /{id}     (read + create/update output)
+    create_schema=DistrictCreateSchema,    # POST /         (create input)
+    update_schema=DistrictUpdateSchema,    # PATCH /{id}    (update input)
+
+    # --- db dependency ---
+    get_db=get_db,
+
+    # --- shared auth/FastAPI defaults (applied to every verb without an explicit config) ---
+    shared=SharedConfig(
+        login_required=True,
+        login_dep=get_current_user,
+        permissions=["erp:district:view"],
+        permission_checker=check_permissions,
+        tags=["Districts"],
+    ),
+
+    # --- options requires an explicit config (label_field or label_fn is mandatory) ---
+    options=OptionsConfig(label_field="name"),
+)
+
+app.include_router(router, prefix="/districts")
+```
+
+This registers:
+
+```
+GET     /districts              list
+GET     /districts/{id}         read
+POST    /districts              create
+PATCH   /districts/{id}         update
+DELETE  /districts/{id}         delete
+GET     /districts/options      options
+POST    /districts/reorder      reorder
+```
+
+### Restricting endpoints
+
+Pass `endpoints` to register only a subset of verbs:
+
+```python
+router = crud_router(
+    model=District,
+    list_item_schema=DistrictSchema,
+    read_schema=DistrictSchema,
+    get_db=get_db,
+    endpoints=["list", "read"],
+    shared=SharedConfig(login_required=False),
+)
+```
+
+Valid endpoint names: `list`, `read`, `create`, `update`, `delete`, `options`, `reorder`.
+
+### SharedConfig
+
+`SharedConfig` sets the default values for auth and FastAPI fields on every verb that does not have an explicit per-verb config:
+
+| Field | Type | Default |
+|---|---|---|
+| `login_required` | `bool` | `True` |
+| `login_dep` | `Callable \| None` | `None` |
+| `permissions` | `list[str]` | `[]` |
+| `permission_checker` | `PermissionChecker \| None` | `None` |
+| `dependencies` | `list[Any]` | `[]` |
+| `tags` | `list[str]` | `[]` |
+
+### Per-verb config overrides
+
+When you pass a per-verb config, it is used **as-is** — `shared` is ignored for that verb. This lets you deviate from the shared baseline for individual verbs:
+
+```python
+router = crud_router(
+    model=District,
+    list_item_schema=DistrictSchema,
+    read_schema=DistrictSchema,
+    create_schema=DistrictCreateSchema,
+    update_schema=DistrictUpdateSchema,
+    get_db=get_db,
+    shared=SharedConfig(login_required=True, login_dep=get_current_user),
+    # override: list is public, everything else requires auth
+    list=ListConfig(login_required=False),
+    options=OptionsConfig(label_field="name", login_required=False),
+)
+```
+
+### Schema routing
+
+| Verb | Input schema | Output schema |
+|---|---|---|
+| list | — | `list_item_schema` |
+| read | — | `read_schema` |
+| create | `create_schema` | `read_schema` |
+| update | `update_schema` | `read_schema` |
+| delete | — | — (204) |
+| options | — | `OptionItem` (label_field/fn from `OptionsConfig`) |
+| reorder | `{ids: [...]}` | — (204) |
+
+### Notes
+
+- `options` always requires an explicit `OptionsConfig` (with `label_field` or `label_fn`). It cannot be defaulted from `shared`.
+- `reorder` requires the model to have a `sort_order` column.
+- Paths are always relative to the router prefix set in `app.include_router(..., prefix=...)`.
+
+---
+
 ## Create endpoint
 
 `create_endpoint` registers a `POST` route that validates the request body, auto-completes system fields, persists the object, and returns it as the read schema with **HTTP 201**.
