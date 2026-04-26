@@ -9,10 +9,10 @@ from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
-from crudite.exceptions import CruditeConfigError
-from crudite.joins import resolve_joins
-from crudite.permissions import check_object_permissions, has_allowed_users_relationship
-from crudite.read.config import ReadConfig
+from crudit.exceptions import CruditConfigError
+from crudit.joins import resolve_joins
+from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.read.config import ReadConfig
 
 
 def read_endpoint(
@@ -113,7 +113,7 @@ def _detect_pk_field(model: type[DeclarativeBase]) -> str:
     mapper = sa_inspect(model)
     pk_cols = list(mapper.primary_key)
     if len(pk_cols) != 1:
-        raise CruditeConfigError(
+        raise CruditConfigError(
             f"{model.__name__} must have exactly one primary key column for read_endpoint."
         )
     return pk_cols[0].name

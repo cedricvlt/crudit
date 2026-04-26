@@ -10,14 +10,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
-from crudite.joins import collect_needed_joins, resolve_joins
-from crudite.list.config import ListConfig
-from crudite.list.filters import apply_default_filters, apply_filters
-from crudite.list.pagination import apply_pagination, resolve_pagination
-from crudite.list.search import apply_search
-from crudite.list.sort import apply_sort
-from crudite.permissions import apply_permissions
-from crudite.schemas import PaginatedResponse
+from crudit.joins import collect_needed_joins, resolve_joins
+from crudit.list.config import ListConfig
+from crudit.list.filters import apply_default_filters, apply_filters
+from crudit.list.pagination import apply_pagination, resolve_pagination
+from crudit.list.search import apply_search
+from crudit.list.sort import apply_sort
+from crudit.permissions import apply_permissions
+from crudit.schemas import PaginatedResponse
 
 
 def list_endpoint(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from crudite.types import HookFn, PermissionChecker, ReadAfterFn
+from crudit.types import HookFn, PermissionChecker, ReadAfterFn
 
 
 @dataclass

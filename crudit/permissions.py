@@ -7,7 +7,7 @@ from sqlalchemy import inspect as sa_inspect, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudite.types import PermissionChecker
+from crudit.types import PermissionChecker
 
 
 def check_object_permissions(

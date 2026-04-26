@@ -9,7 +9,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, contains_eager, joinedload, selectinload
 from sqlalchemy.orm.strategy_options import _AbstractLoad
 
-from crudite.exceptions import CruditeConfigError
+from crudit.exceptions import CruditConfigError
 
 
 @dataclass
@@ -54,7 +54,7 @@ def resolve_joins(model: type[DeclarativeBase], schema: type[BaseModel]) -> Join
             continue
 
         if field_name not in relationship_map:
-            raise CruditeConfigError(
+            raise CruditConfigError(
                 f"Schema field '{field_name}' looks like a relationship "
                 f"(annotated with a BaseModel subclass) but no relationship "
                 f"named '{field_name}' exists on {model.__name__}."
@@ -81,7 +81,7 @@ def collect_needed_joins(
     Scan filter keys and sort param to find which m2o relationships need an
     explicit JOIN added to the query for WHERE / ORDER BY to work.
     """
-    from crudite.list.filters import _RESERVED_PARAMS, _parse_key
+    from crudit.list.filters import _RESERVED_PARAMS, _parse_key
 
     needed: set[str] = set()
 

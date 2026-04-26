@@ -6,8 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudite.joins import resolve_nested_column
-from crudite.types import FilterFn
+from crudit.joins import resolve_nested_column
+from crudit.types import FilterFn
 
 _RESERVED_PARAMS = frozenset(
     {"sort", "page", "items_per_page", "offset", "limit", "q", "count_only"}

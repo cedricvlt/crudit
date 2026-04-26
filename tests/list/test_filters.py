@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from crudite import ListConfig
+from crudit import ListConfig
 
 
 FILTERABLE = ["name", "is_active", "city.name"]

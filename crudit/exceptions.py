@@ -1,6 +1,6 @@
-class CruditeConfigError(Exception):
+class CruditConfigError(Exception):
     """Raised at registration time when the ListConfig is invalid."""
 
 
-class CruditeForbidden(Exception):
+class CruditForbidden(Exception):
     """Raised when a permission check fails."""

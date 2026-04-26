@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from crudite import ListConfig
-from crudite.list.pagination import resolve_pagination
+from crudit import ListConfig
+from crudit.list.pagination import resolve_pagination
 
 
 def test_page_mode_defaults():

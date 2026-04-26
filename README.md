@@ -1,4 +1,4 @@
-# crudite
+# crudit
 
 A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
@@ -11,7 +11,7 @@ Declare once, get a fully-featured paginated list endpoint: filtering, sorting, 
 ## Installation
 
 ```bash
-pip install crudite
+pip install crudit
 ```
 
 **Requirements:** Python ≥ 3.13, FastAPI ≥ 0.111, SQLAlchemy ≥ 2.0, Pydantic ≥ 2.0.
@@ -22,7 +22,7 @@ pip install crudite
 
 ```python
 from fastapi import APIRouter
-from crudite import list_endpoint, ListConfig, read_endpoint, ReadConfig
+from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig
 
 router = APIRouter()
 
@@ -107,7 +107,7 @@ class DistrictSchema(BaseModel):
 # routes.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from crudite import list_endpoint, ListConfig, read_endpoint, ReadConfig
+from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig
 
 router = APIRouter()
 
@@ -234,7 +234,7 @@ Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must 
 
 ## Auto-join detection
 
-crudite inspects the Pydantic `schema` at registration time. Any field annotated with a `BaseModel` subclass is matched to a SQLAlchemy relationship by name:
+crudit inspects the Pydantic `schema` at registration time. Any field annotated with a `BaseModel` subclass is matched to a SQLAlchemy relationship by name:
 
 - `field: RelatedSchema` → **many-to-one / one-to-one** → `joinedload`
 - `field: list[RelatedSchema]` → **one-to-many** → `selectinload` (avoids cartesian products with pagination)
@@ -245,7 +245,7 @@ Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` tri
 
 ## Permissions
 
-crudite applies a two-layer permission model on both list and read endpoints.
+crudit applies a two-layer permission model on both list and read endpoints.
 
 **1. Route-level** — checked once per request:
 ```python
@@ -297,7 +297,7 @@ Call: `GET /items?active_this_week=1`
 
 ## Hooks
 
-All hooks may be **sync or async** — crudite detects and awaits accordingly.
+All hooks may be **sync or async** — crudit detects and awaits accordingly.
 
 ### List endpoint hooks
 

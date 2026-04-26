@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from crudite import ReadConfig
+from crudit import ReadConfig
 
 
 # ---------------------------------------------------------------------------

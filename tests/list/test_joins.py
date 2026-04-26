@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from crudite.exceptions import CruditeConfigError
-from crudite.joins import resolve_joins
+from crudit.exceptions import CruditConfigError
+from crudit.joins import resolve_joins
 from tests.conftest import District
 
 
@@ -48,13 +48,13 @@ def test_unknown_relationship_raises():
         id: int
         nonexistent: CitySchema
 
-    with pytest.raises(CruditeConfigError, match="nonexistent"):
+    with pytest.raises(CruditConfigError, match="nonexistent"):
         resolve_joins(District, BadSchema)
 
 
 @pytest.mark.asyncio
 async def test_joined_data_in_response(seed, make_client):
-    from crudite import ListConfig
+    from crudit import ListConfig
 
     async with await make_client(
         ListConfig(

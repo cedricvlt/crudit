@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from crudite import ListConfig, list_endpoint
+from crudit import ListConfig, list_endpoint
 from tests.conftest import District, DistrictSchema
 
 
