@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudite.exceptions import CruditeConfigError
-from crudite.list.joins import resolve_joins
-from crudite.list.permissions import _has_allowed_users_relationship, check_object_permissions
+from crudite.joins import resolve_joins
+from crudite.permissions import check_object_permissions, has_allowed_users_relationship
 from crudite.read.config import ReadConfig
 
 
@@ -34,7 +34,7 @@ def read_endpoint(
     join_info = resolve_joins(model, schema)
     pk_field = _detect_pk_field(model)
     load_allowed_users = (
-        _has_allowed_users_relationship(model)
+        has_allowed_users_relationship(model)
         and "allowed_users" not in join_info.joined_models
     )
 

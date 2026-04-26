@@ -4,7 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from crudite.exceptions import CruditeConfigError
-from crudite.list.joins import resolve_joins
+from crudite.joins import resolve_joins
 from tests.conftest import District
 
 

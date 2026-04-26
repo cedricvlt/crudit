@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select, nulls_last
 
-from crudite.list.joins import resolve_nested_column
+from crudite.joins import resolve_nested_column
 
 
 def apply_sort(

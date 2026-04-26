@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudite.list.joins import resolve_nested_column
+from crudite.joins import resolve_nested_column
 from crudite.types import FilterFn
 
 _RESERVED_PARAMS = frozenset(

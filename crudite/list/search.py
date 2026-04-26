@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudite.list.joins import resolve_nested_column
+from crudite.joins import resolve_nested_column
 from crudite.types import SearchFn
 
 

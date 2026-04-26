@@ -35,26 +35,6 @@ def check_object_permissions(
         raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
 
-def _build_object_level_checks(
-    model: type[DeclarativeBase],
-    current_user: Any,
-) -> list[Callable[[Any], bool]]:
-    checks: list[Callable[[Any], bool]] = []
-
-    if hasattr(model, "tenant_id") and hasattr(current_user, "tenant_id"):
-        tenant_id = current_user.tenant_id
-        checks.append(lambda obj, _t=tenant_id: obj.tenant_id == _t)
-
-    if _has_allowed_users_relationship(model):
-        user_id = getattr(current_user, "id", None)
-        if user_id is not None:
-            checks.append(
-                lambda obj, _uid=user_id: any(u.id == _uid for u in getattr(obj, "allowed_users", []))
-            )
-
-    return checks
-
-
 def apply_permissions(
     query: Select,
     model: type[DeclarativeBase],
@@ -80,6 +60,26 @@ def apply_permissions(
     return query
 
 
+def _build_object_level_checks(
+    model: type[DeclarativeBase],
+    current_user: Any,
+) -> list[Callable[[Any], bool]]:
+    checks: list[Callable[[Any], bool]] = []
+
+    if hasattr(model, "tenant_id") and hasattr(current_user, "tenant_id"):
+        tenant_id = current_user.tenant_id
+        checks.append(lambda obj, _t=tenant_id: obj.tenant_id == _t)
+
+    if has_allowed_users_relationship(model):
+        user_id = getattr(current_user, "id", None)
+        if user_id is not None:
+            checks.append(
+                lambda obj, _uid=user_id: any(u.id == _uid for u in getattr(obj, "allowed_users", []))
+            )
+
+    return checks
+
+
 def _build_row_level_conditions(
     model: type[DeclarativeBase],
     current_user: Any,
@@ -89,7 +89,7 @@ def _build_row_level_conditions(
     if hasattr(model, "tenant_id") and hasattr(current_user, "tenant_id"):
         conditions.append(model.tenant_id == current_user.tenant_id)
 
-    if _has_allowed_users_relationship(model):
+    if has_allowed_users_relationship(model):
         user_id = getattr(current_user, "id", None)
         if user_id is not None:
             user_model = _get_allowed_users_target(model)
@@ -101,7 +101,7 @@ def _build_row_level_conditions(
     return conditions
 
 
-def _has_allowed_users_relationship(model: type[DeclarativeBase]) -> bool:
+def has_allowed_users_relationship(model: type[DeclarativeBase]) -> bool:
     try:
         mapper = sa_inspect(model)
         return "allowed_users" in {r.key for r in mapper.relationships}
