@@ -4,7 +4,7 @@ A declarative CRUD endpoint factory for **FastAPI** + **async SQLAlchemy 2.0**.
 
 Declare once, get a fully-featured endpoint: filtering, sorting, search, nested joins, row-level permissions, and lifecycle hooks — no boilerplate.
 
-> **Status:** List, read, create, update, delete, reorder, and options endpoints implemented.
+> **Status:** List, read, create, update, delete, reorder, options, and many-to-many endpoints implemented.
 
 ---
 
@@ -1319,3 +1319,114 @@ Status codes:
 - **403** — user authenticated but fails route-level or row-level permission check
 - **404** — one or more IDs not found or outside the path-filtered scope
 - **422** — request body failed schema validation
+
+---
+
+## Many-to-many router
+
+`m2m_router` builds an `APIRouter` with three endpoints for managing a many-to-many relationship through an association table:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/{prefix}/{parent_id}/{children}` | List children linked to a parent |
+| `POST` | `/{prefix}/{parent_id}/{children}` | Add children by ID (idempotent) |
+| `DELETE` | `/{prefix}/{parent_id}/{children}` | Remove children by ID (idempotent) |
+
+### Setup
+
+```python
+from sqlalchemy import Column, ForeignKey, Integer, Table
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase): ...
+
+user_permission = Table(
+    "user_permission",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("permission_id", Integer, ForeignKey("permissions.id"), primary_key=True),
+)
+```
+
+```python
+from fastapi import APIRouter
+from crudit import m2m_router, M2MConfig
+from pydantic import BaseModel
+
+class PermissionSchema(BaseModel):
+    id: int
+    code: str
+
+router = m2m_router(
+    parent_model=User,
+    child_model=Permission,
+    association_table=user_permission,
+    child_schema=PermissionSchema,
+    prefix="/users",
+    get_db=get_db,
+    login_dep=get_current_user,
+    config=M2MConfig(login_required=True),
+)
+
+app.include_router(router)
+```
+
+This registers:
+
+```
+GET    /users/{user_id}/permissions
+POST   /users/{user_id}/permissions   body: {"ids": [1, 2, 3]}
+DELETE /users/{user_id}/permissions   body: {"ids": [2]}
+```
+
+The parent path parameter name and child path segment are inferred automatically:
+- **Parent param**: taken from the FK column in the association table that references the parent model's table (e.g. `user_id`).
+- **Child segment**: `{child_model.__name__.lower()}s` by default (e.g. `permissions`). Override with `M2MConfig(child_path_segment="perms")`.
+
+### Request / response
+
+**GET** — returns a JSON array of `child_schema` objects.
+
+**POST** — body: `{"ids": [1, 2, 3]}`. Returns the updated list. Raises **422** if any ID does not exist in the child table. Adding already-linked IDs is a no-op (idempotent).
+
+**DELETE** — body: `{"ids": [2]}`. Returns **204 No Content**. Removing IDs that are not linked is a no-op (idempotent).
+
+### `M2MConfig` reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `child_path_segment` | `str \| None` | `None` | URL segment for the child collection. Defaults to `{ChildModel.__name__.lower()}s`. |
+| `tags` | `list[str]` | `[]` | OpenAPI tags for all three routes. |
+| `dependencies` | `list[Any]` | `[]` | Extra FastAPI `Depends(...)` objects applied to every route. |
+| `login_required` | `bool` | `True` | When `True`, the `login_dep` is enforced on every route. |
+| `permissions` | `list[str]` | `[]` | Permission codes passed to `permission_dep`. |
+
+### `m2m_router()` signature
+
+```python
+def m2m_router(
+    *,
+    parent_model: type,                          # SQLAlchemy ORM model (parent side)
+    child_model: type,                           # SQLAlchemy ORM model (child side)
+    association_table: Table,                    # SQLAlchemy association Table
+    child_schema: type[BaseModel],               # Pydantic schema for child objects
+    prefix: str,                                 # URL prefix, e.g. "/users"
+    get_db: Callable,                            # FastAPI dependency returning AsyncSession
+    config: M2MConfig | None = None,
+    login_dep: Callable | None = None,           # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,
+) -> APIRouter:
+```
+
+The returned `APIRouter` must be included in your FastAPI app with `app.include_router(router)`.
+
+### Status codes
+
+| Code | Meaning |
+|------|---------|
+| **200** | GET / POST — success |
+| **204** | DELETE — success |
+| **401** | `login_required=True` and `login_dep` raised 401 |
+| **403** | Permission check failed |
+| **404** | Parent not found |
+| **422** | POST — one or more child IDs do not exist |

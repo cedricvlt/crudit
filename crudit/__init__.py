@@ -6,6 +6,8 @@ from crudit.delete.endpoint import delete_endpoint
 from crudit.exceptions import CruditConfigError, CruditForbidden
 from crudit.list.config import ListConfig
 from crudit.list.endpoint import list_endpoint
+from crudit.m2m.config import M2MConfig
+from crudit.m2m.endpoint import M2MIdsBody, m2m_router
 from crudit.options.config import OptionsConfig
 from crudit.options.endpoint import options_endpoint
 from crudit.read.config import ReadConfig
@@ -20,6 +22,9 @@ __all__ = [
     "create_endpoint",
     "CreateConfig",
     "ParentParam",
+    "m2m_router",
+    "M2MConfig",
+    "M2MIdsBody",
     "delete_endpoint",
     "DeleteConfig",
     "list_endpoint",
