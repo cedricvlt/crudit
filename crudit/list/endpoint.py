@@ -24,7 +24,7 @@ from crudit.list.sort import apply_sort
 from crudit.permissions import apply_permissions
 from crudit.schemas import PaginatedResponse
 from crudit.signature import inject_query_params
-from crudit.utils import bind_perms, call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
 
 
 def list_endpoint(
@@ -52,7 +52,7 @@ def list_endpoint(
     _join_info = join_info
 
     db_dep = Depends(get_db)
-    user_dep = Depends(login_dep) if login_dep else None
+    user_dep = user_dep_or_none(login_dep)
 
     async def _handler(
         request: Request,

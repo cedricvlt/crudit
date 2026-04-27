@@ -14,7 +14,7 @@ from crudit.permissions import check_object_permissions, has_allowed_users_relat
 from crudit.read.config import ReadConfig
 from crudit.types import PermissionDepFn
 from crudit.signature import patch_param_annotation
-from crudit.utils import bind_perms, call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
 
 
 def read_endpoint(
@@ -51,7 +51,7 @@ def read_endpoint(
     _pk_field = pk_field
 
     db_dep = Depends(get_db)
-    user_dep = Depends(login_dep) if login_dep else None
+    user_dep = user_dep_or_none(login_dep)
 
     async def _handler(
         request: Request,

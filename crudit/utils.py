@@ -4,6 +4,25 @@ import asyncio
 import inspect
 from typing import Any, Callable
 
+from fastapi import Depends
+
+
+async def _no_user() -> None:
+    return None
+
+
+_NO_USER_DEP = Depends(_no_user)
+
+
+def user_dep_or_none(login_dep: Callable | None) -> Any:
+    """Return Depends(login_dep) if provided, else a no-op Depends that returns None.
+
+    Using a bare None default for current_user causes FastAPI to expose it as a
+    query parameter in the OpenAPI schema.  A Depends that resolves to None is
+    invisible to OpenAPI and avoids this leak.
+    """
+    return Depends(login_dep) if login_dep else _NO_USER_DEP
+
 _ERROR_DESCRIPTIONS: dict[int, str] = {
     400: "Bad request (missing path parameter or validation error)",
     401: "Unauthorized",

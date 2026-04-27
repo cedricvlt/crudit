@@ -13,7 +13,7 @@ from crudit.permissions import check_object_permissions, check_route_permissions
 from crudit.read.endpoint import _detect_pk_field
 from crudit.reorder.config import ReorderConfig
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
 
 _ORDER_FIELD = "sort_order"
 
@@ -54,7 +54,7 @@ def reorder_endpoint(
     _pk_field = pk_field
 
     db_dep = Depends(get_db)
-    user_dep = Depends(login_dep) if login_dep else None
+    user_dep = user_dep_or_none(login_dep)
 
     async def _handler(
         request: Request,
