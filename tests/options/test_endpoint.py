@@ -25,8 +25,8 @@ async def test_response_envelope(seed, make_client):
         assert "data" in body
         assert "total_count" in body
         assert "has_more" in body
-        assert "page" in body
-        assert "items_per_page" in body
+        assert "page" not in body
+        assert "items_per_page" not in body
 
 
 @pytest.mark.asyncio

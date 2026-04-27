@@ -77,14 +77,12 @@ async def test_update_login_not_required_no_user_returns_200(seed, make_update_c
 
 @pytest.mark.asyncio
 async def test_update_permission_dep_denied_returns_403(seed, make_update_client):
-    from fastapi import Depends, HTTPException
+    from fastapi import HTTPException
 
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def deny_dep(perms):
-        async def check():
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
-        return Depends(check)
+    async def deny_dep():
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
     config = UpdateConfig(
         login_required=True,
@@ -97,14 +95,10 @@ async def test_update_permission_dep_denied_returns_403(seed, make_update_client
 
 @pytest.mark.asyncio
 async def test_update_permission_dep_allowed_returns_200(seed, make_update_client):
-    from fastapi import Depends
-
     user = User(id=1, name="Alice", tenant_id=1)
 
-    def allow_dep(perms):
-        async def check():
-            pass
-        return Depends(check)
+    async def allow_dep():
+        pass
 
     config = UpdateConfig(
         login_required=True,

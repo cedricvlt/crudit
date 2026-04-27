@@ -62,6 +62,7 @@ def crud_router(
     read_schema: type[BaseModel] | None = None,
     create_schema: type[BaseModel] | None = None,
     update_schema: type[BaseModel] | None = None,
+    option_schema: type[BaseModel] | None = None,
     get_db: Callable,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
@@ -91,7 +92,7 @@ def crud_router(
       read    → read_schema
       create  → create_schema (input) + read_schema (output)
       update  → update_schema (input) + read_schema (output)
-      options → list_item_schema for join resolution (output is always OptionItem)
+      options → option_schema for join resolution (output is always OptionItem)
       reorder → no schema
     """
     active_crud = set(crud_endpoints if crud_endpoints is not None else _CRUD_ENDPOINTS)
@@ -152,7 +153,8 @@ def crud_router(
 
     if "options" in active:
         options_cfg = options or _from_shared(OptionsConfig, shared, **_shared_kwargs)
-        options_endpoint(router, "/options", model, options_cfg, schema=list_item_schema, **_endpoint_kwargs)
+        _opt_schema_kwargs = {"schema": option_schema} if option_schema is not None else {}
+        options_endpoint(router, "/options", model, options_cfg, **_opt_schema_kwargs, **_endpoint_kwargs)
 
     if "reorder" in active:
         reorder_cfg = reorder or _from_shared(ReorderConfig, shared, **_shared_kwargs)

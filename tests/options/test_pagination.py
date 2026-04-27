@@ -24,7 +24,7 @@ async def test_offset_limit_pagination(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_page_based_pagination(seed, make_client):
+async def test_second_page_via_offset(seed, make_client):
     async with await make_client(
         OptionsConfig(
             path_filters={"city_id": "city_id"},
@@ -33,27 +33,8 @@ async def test_page_based_pagination(seed, make_client):
             sortable_fields=["name"],
         )
     ) as client:
-        r = await client.get("/cities/1/districts?sort=name&page=1&items_per_page=1")
-        assert r.status_code == 200
-        body = r.json()
-        assert len(body["data"]) == 1
-        assert body["page"] == 1
-        assert body["items_per_page"] == 1
-        assert body["has_more"] is True
-
-
-@pytest.mark.asyncio
-async def test_second_page(seed, make_client):
-    async with await make_client(
-        OptionsConfig(
-            path_filters={"city_id": "city_id"},
-            login_required=False,
-            label_field="name",
-            sortable_fields=["name"],
-        )
-    ) as client:
-        r1 = await client.get("/cities/1/districts?sort=name&page=1&items_per_page=1")
-        r2 = await client.get("/cities/1/districts?sort=name&page=2&items_per_page=1")
+        r1 = await client.get("/cities/1/districts?sort=name&offset=0&limit=1")
+        r2 = await client.get("/cities/1/districts?sort=name&offset=1&limit=1")
         id1 = r1.json()["data"][0]["id"]
         id2 = r2.json()["data"][0]["id"]
         assert id1 != id2

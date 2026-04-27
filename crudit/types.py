@@ -38,8 +38,8 @@ DeleteHookFn = Callable[[Any, Request, Any], None]
 # (objects, request, current_user) -> None  (reorder hooks)
 ReorderHookFn = Callable[[list[Any], Request, Any], None]
 
-# (required_permissions) -> FastAPI Depends
-PermissionDepFn = Callable[[list[str]], Any]
+# plain FastAPI dependency callable (same form as login_dep)
+PermissionDepFn = Callable[..., Any]
 
 # (row) -> str  (options label builder)
 LabelFn = Callable[[Any], str]

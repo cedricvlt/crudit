@@ -111,12 +111,10 @@ from crudit import list_endpoint, ListConfig, read_endpoint, ReadConfig, create_
 
 router = APIRouter()
 
-def make_permission_dep(perms: list[str]):
-    """Return a FastAPI Depends that raises 403 when the user lacks the given permissions."""
-    async def check(current_user=Depends(get_current_user)):
-        if not all(p in current_user.permissions for p in perms):
-            raise HTTPException(status_code=403)
-    return Depends(check)
+async def permission_dep(current_user=Depends(get_current_user)):
+    """Raise 403 when the user lacks the required permissions."""
+    if not all(p in current_user.permissions for p in REQUIRED_PERMISSIONS):
+        raise HTTPException(status_code=403)
 
 list_endpoint(
     router=router,
@@ -145,7 +143,7 @@ list_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,            # FastAPI dependency → current_user
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,         # plain async callable, wrapped with Depends()
     summary="List districts for a city",
     get_db=get_db,
 )
@@ -161,7 +159,7 @@ read_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     summary="Get a district by ID",
     get_db=get_db,
 )
@@ -181,7 +179,7 @@ create_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     summary="Create a district in a city",
     get_db=get_db,
 )
@@ -198,7 +196,7 @@ update_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     summary="Partially update a district",
     get_db=get_db,
 )
@@ -213,7 +211,7 @@ delete_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     summary="Delete a district",
     get_db=get_db,
 )
@@ -229,7 +227,7 @@ reorder_endpoint(
         tags=["Districts"],
     ),
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     summary="Reorder districts within a city",
     get_db=get_db,
 )
@@ -255,13 +253,14 @@ router = crud_router(
     read_schema=DistrictSchema,            # GET  /{id}     (read + create/update output)
     create_schema=DistrictCreateSchema,    # POST /         (create input)
     update_schema=DistrictUpdateSchema,    # PATCH /{id}    (update input)
+    option_schema=DistrictSchema,          # GET  /options  (join resolution only)
 
     # --- db dependency ---
     get_db=get_db,
 
     # --- auth/FastAPI fields shared across all endpoints ---
     login_dep=get_current_user,
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,         # plain async callable, wrapped with Depends()
     tags=["Districts"],
 
     # --- shared auth defaults (applied to every verb without an explicit config) ---
@@ -301,7 +300,7 @@ router = crud_router(
 )
 ```
 
-No `OptionsConfig` is needed — it defaults to `label_field="name"`. Pass an explicit `options=OptionsConfig(...)` to customise the label or any other field.
+No `OptionsConfig` is needed — it defaults to `label_field="name"`. Pass an explicit `options=OptionsConfig(...)` to customise the label or any other field. Pass `option_schema=MySchema` when the options endpoint needs join resolution (e.g. for `label_fn` or filter/sort on related fields); defaults to a minimal schema with `name: str`.
 
 ### Restricting core endpoints
 
@@ -328,7 +327,7 @@ Valid `extra_endpoints` values: `options`, `reorder`.
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `login_dep` | `Callable \| None` | `None` | FastAPI dependency returning `current_user` |
-| `permission_dep` | `PermissionDepFn \| None` | `None` | `(list[str]) -> Depends` — route-level permission check |
+| `permission_dep` | `Callable \| None` | `None` | Plain async callable — wrapped with `Depends()` for route-level permission check |
 | `tags` | `list[str] \| None` | `None` | OpenAPI tags applied to all registered routes |
 
 ### SharedConfig
@@ -369,7 +368,7 @@ router = crud_router(
 | create | `create_schema` | `read_schema` |
 | update | `update_schema` | `read_schema` |
 | delete | — | — (204) |
-| options | — | `OptionItem` (label from `OptionsConfig`, defaults to `"name"`) |
+| options | — | `OptionItem` (label from `OptionsConfig`, defaults to `"name"`); join resolution uses `option_schema` |
 | reorder | `{ids: [...]}` | — (204) |
 
 ### Notes
@@ -739,7 +738,7 @@ Status codes:
 
 ## Options endpoint response format
 
-Options endpoints return the same paginated envelope as the list endpoint, but each item contains only `id` and `label`:
+Options endpoints return an offset-paginated envelope with only `id` and `label` per item. Unlike the list endpoint, `page` and `items_per_page` are not included — only offset/limit-based pagination is supported.
 
 ```json
 {
@@ -748,13 +747,11 @@ Options endpoints return the same paginated envelope as the list endpoint, but e
     { "id": 2, "label": "Paris — Marais" }
   ],
   "total_count": 2,
-  "has_more": false,
-  "page": 1,
-  "items_per_page": 25
+  "has_more": false
 }
 ```
 
-`label` is always a `str`. `id` reflects the model's primary key type.
+`label` is always a `str`. `id` reflects the model's primary key type. Use `?offset=` and `?limit=` for pagination.
 
 ---
 
@@ -822,20 +819,17 @@ Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` tri
 
 crudit applies a two-layer permission model on both list and read endpoints.
 
-**1. Route-level** — a FastAPI dependency injected at registration time:
+**1. Route-level** — a plain async callable injected at registration time via `Depends()`:
 ```python
-# permission_dep is called once at registration with the permissions list.
-# It must return a FastAPI Depends object that raises HTTP 403 on failure.
-def make_permission_dep(perms: list[str]):
-    async def check(current_user=Depends(get_current_user)):
-        if not all(p in current_user.permissions for p in perms):
-            raise HTTPException(status_code=403)
-    return Depends(check)
+# permission_dep is a plain async callable — crudit wraps it with Depends() automatically.
+async def permission_dep(current_user=Depends(get_current_user)):
+    if not all(p in current_user.permissions for p in REQUIRED_PERMISSIONS):
+        raise HTTPException(status_code=403)
 
 list_endpoint(
     ...,
     config=ListConfig(permissions=["erp:district:view"]),
-    permission_dep=make_permission_dep,
+    permission_dep=permission_dep,
     ...,
 )
 ```
@@ -994,14 +988,14 @@ def options_endpoint(
     config: OptionsConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
-    schema: type[BaseModel] | None = None,  # for join resolution only
-    get_db: Callable,                        # FastAPI dependency returning AsyncSession
+    schema: type[BaseModel] = _DefaultOptionSchema,  # for join resolution only; defaults to {name: str}
+    get_db: Callable,                                # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
 
-`schema` is optional. Pass it when `label_fn` or filter/sort fields access related objects — it is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. The endpoint always returns `PaginatedResponse[OptionItem]`.
+`schema` is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. It defaults to a minimal schema with a `name: str` field — pass an explicit schema when `label_fn` or filter/sort fields access related objects. The endpoint always returns `OffsetPaginatedResponse[OptionItem]` (no `page` or `items_per_page`).
 
 **Usage example:**
 
@@ -1031,7 +1025,7 @@ options_endpoint(
 
 ```
 GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=25
-→ {"data": [{"id": 1, "label": "Montmartre"}], "total_count": 1, "has_more": false, ...}
+→ {"data": [{"id": 1, "label": "Montmartre"}], "total_count": 1, "has_more": false}
 ```
 
 ---
@@ -1136,7 +1130,7 @@ def list_endpoint(
     config: ListConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1155,7 +1149,7 @@ def read_endpoint(
     config: ReadConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1177,7 +1171,7 @@ def create_endpoint(
     config: CreateConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,                # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1222,7 +1216,7 @@ def update_endpoint(
     config: UpdateConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,                # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1262,7 +1256,7 @@ def delete_endpoint(
     config: DeleteConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1305,7 +1299,7 @@ def reorder_endpoint(
     config: ReorderConfig,
     *,
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
-    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
     get_db: Callable,              # FastAPI dependency returning AsyncSession
 ) -> None:

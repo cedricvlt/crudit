@@ -15,6 +15,12 @@ class PaginatedResponse(BaseModel, Generic[T]):
     items_per_page: int
 
 
+class OffsetPaginatedResponse(BaseModel, Generic[T]):
+    data: list[T]
+    total_count: int
+    has_more: bool
+
+
 class OptionItem(BaseModel):
     id: Any
     label: str

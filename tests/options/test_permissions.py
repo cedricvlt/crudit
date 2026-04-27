@@ -35,13 +35,11 @@ async def test_login_not_required_no_user_succeeds(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_permission_dep_deny(seed, make_client):
-    from fastapi import Depends, HTTPException
+    from fastapi import HTTPException
     from tests.conftest import User
 
-    def deny_dep(perms):
-        async def check():
-            raise HTTPException(status_code=403, detail="Insufficient permissions.")
-        return Depends(check)
+    async def deny_dep():
+        raise HTTPException(status_code=403, detail="Insufficient permissions.")
 
     async with await make_client(
         OptionsConfig(
@@ -59,13 +57,10 @@ async def test_permission_dep_deny(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_permission_dep_allow(seed, make_client):
-    from fastapi import Depends
     from tests.conftest import User
 
-    def allow_dep(perms):
-        async def check():
-            pass
-        return Depends(check)
+    async def allow_dep():
+        pass
 
     async with await make_client(
         OptionsConfig(

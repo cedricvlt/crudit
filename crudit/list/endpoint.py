@@ -156,8 +156,8 @@ def list_endpoint(
 
     model_name = model.__name__
     deps = list(_config.dependencies)
-    if permission_dep is not None and _config.permissions:
-        deps.append(permission_dep(_config.permissions))
+    if permission_dep is not None:
+        deps.append(Depends(permission_dep))
     router.add_api_route(
         path,
         _handler,

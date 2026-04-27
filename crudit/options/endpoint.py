@@ -22,9 +22,13 @@ from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
-from crudit.schemas import OptionItem, PaginatedResponse
+from crudit.schemas import OffsetPaginatedResponse, OptionItem
 from crudit.signature import inject_query_params
 from crudit.utils import call_hook, get_error_responses
+
+
+class _DefaultOptionSchema(BaseModel):
+    name: str
 
 
 def options_endpoint(
@@ -36,7 +40,7 @@ def options_endpoint(
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
-    schema: type[BaseModel] | None = None,
+    schema: type[BaseModel] = _DefaultOptionSchema,
     get_db: Callable,
 ) -> None:
     """
@@ -46,8 +50,9 @@ def options_endpoint(
     config.label_field (a column name) or config.label_fn (a callable that
     receives the ORM row and returns a str).
 
-    Pass `schema` only when label_fn or filters/sort need related objects —
-    it is used solely for join resolution, not for serialisation.
+    Pass `schema` when label_fn or filters/sort need related objects — it is
+    used solely for join resolution, not for serialisation. Defaults to a
+    minimal schema with only a `name` field.
     """
     if config.label_field is None and config.label_fn is None:
         config.label_field = "name"
@@ -56,7 +61,7 @@ def options_endpoint(
             "OptionsConfig requires either label_field or label_fn, not both."
         )
 
-    join_info: JoinInfo = resolve_joins(model, schema) if schema is not None else JoinInfo()
+    join_info: JoinInfo = resolve_joins(model, schema)
 
     _model = model
     _config = config
@@ -71,8 +76,6 @@ def options_endpoint(
         current_user: Any = user_dep,
         q: str | None = None,
         sort: str | None = None,
-        page: int | None = None,
-        items_per_page: int | None = None,
         offset: int | None = None,
         limit: int | None = None,
         **_filter_kwargs,  # absorbs filterable-field params injected via __signature__
@@ -135,7 +138,7 @@ def options_endpoint(
             _config.sortable_fields,
         )
 
-        pagination = resolve_pagination(page, items_per_page, offset, limit)
+        pagination = resolve_pagination(None, None, offset, limit)
         query = apply_pagination(query, pagination)
 
         options = _join_info.eager_load_options(_model, explicitly_joined)
@@ -150,25 +153,23 @@ def options_endpoint(
 
         data = [_build_item(row, _config) for row in rows]
 
-        return PaginatedResponse(
+        return OffsetPaginatedResponse(
             data=data,
             total_count=total_count,
             has_more=(pagination.sql_offset + pagination.sql_limit) < total_count,
-            page=pagination.page,
-            items_per_page=pagination.items_per_page,
         )
 
     inject_query_params(_handler, _config.filterable_fields)
 
     model_name = model.__name__
     deps = list(_config.dependencies)
-    if permission_dep is not None and _config.permissions:
-        deps.append(permission_dep(_config.permissions))
+    if permission_dep is not None:
+        deps.append(Depends(permission_dep))
     router.add_api_route(
         path,
         _handler,
         methods=["GET"],
-        response_model=PaginatedResponse[OptionItem],
+        response_model=OffsetPaginatedResponse[OptionItem],
         tags=_config.tags or None,
         summary=summary or f"List {model_name} option items for selection.",
         dependencies=deps,

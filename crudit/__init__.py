@@ -12,7 +12,7 @@ from crudit.read.config import ReadConfig
 from crudit.read.endpoint import read_endpoint
 from crudit.reorder.config import ReorderConfig
 from crudit.reorder.endpoint import reorder_endpoint
-from crudit.schemas import OptionItem, PaginatedResponse
+from crudit.schemas import OffsetPaginatedResponse, OptionItem, PaginatedResponse
 from crudit.update.config import UpdateConfig
 from crudit.update.endpoint import update_endpoint
 
@@ -26,6 +26,7 @@ __all__ = [
     "ListConfig",
     "options_endpoint",
     "OptionsConfig",
+    "OffsetPaginatedResponse",
     "OptionItem",
     "read_endpoint",
     "ReadConfig",
