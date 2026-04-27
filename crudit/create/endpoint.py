@@ -13,6 +13,7 @@ from crudit.create.config import CreateConfig
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.signature import patch_param_annotation
 from crudit.utils import call_hook, get_error_responses
 
 
@@ -131,9 +132,7 @@ def create_endpoint(
 
         return _read_schema.model_validate(obj, from_attributes=True)
 
-    # Patch body annotation so FastAPI uses the actual create schema for
-    # request body parsing and OpenAPI docs.
-    _handler.__annotations__["body"] = _create_schema
+    patch_param_annotation(_handler, "body", _create_schema)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

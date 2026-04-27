@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.delete.config import DeleteConfig
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.signature import patch_param_annotation
 from crudit.utils import call_hook, get_error_responses
 
 
@@ -39,6 +40,7 @@ def delete_endpoint(
 
     async def _handler(
         request: Request,
+        id: Any,  # annotation patched below to _pk_python_type
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Response:
@@ -46,9 +48,8 @@ def delete_endpoint(
         check_route_permissions(current_user, _config.login_required)
 
         # 2. Fetch object
-        pk_value = _pk_python_type(request.path_params["id"])
         pk_col = getattr(_model, _pk_field)
-        query = select(_model).where(pk_col == pk_value)
+        query = select(_model).where(pk_col == id)
 
         if load_allowed_users:
             query = query.options(selectinload(getattr(_model, "allowed_users")))
@@ -80,6 +81,8 @@ def delete_endpoint(
             await call_hook(_config.after_delete, obj, request, current_user)
 
         return Response(status_code=204)
+
+    patch_param_annotation(_handler, "id", _pk_python_type)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

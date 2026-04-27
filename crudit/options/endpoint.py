@@ -10,13 +10,19 @@ from sqlalchemy.orm import DeclarativeBase
 
 from crudit.exceptions import CruditConfigError
 from crudit.joins import JoinInfo, collect_needed_joins, resolve_joins
-from crudit.list.filters import apply_default_filters, apply_filters, apply_path_filters
-from crudit.list.pagination import _int_or_none, apply_pagination, resolve_pagination
+from crudit.list.filters import (
+    _RESERVED_PARAMS,
+    apply_default_filters,
+    apply_filters,
+    apply_path_filters,
+)
+from crudit.list.pagination import apply_pagination, resolve_pagination
 from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OptionItem, PaginatedResponse
+from crudit.signature import inject_query_params
 from crudit.utils import call_hook, get_error_responses
 
 
@@ -59,17 +65,20 @@ def options_endpoint(
         request: Request,
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
+        q: str | None = None,
+        sort: str | None = None,
+        page: int | None = None,
+        items_per_page: int | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        **_filter_kwargs,  # absorbs filterable-field params injected via __signature__
     ) -> Any:
-        raw_params = dict(request.query_params)
+        filter_params = {
+            k: v
+            for k, v in request.query_params.items()
+            if k not in _RESERVED_PARAMS
+        }
         path_params = dict(request.path_params)
-
-        sort_param = raw_params.get("sort")
-        q_param = raw_params.get("q")
-
-        page = _int_or_none(raw_params.get("page"))
-        items_per_page = _int_or_none(raw_params.get("items_per_page"))
-        offset = _int_or_none(raw_params.get("offset"))
-        limit = _int_or_none(raw_params.get("limit"))
 
         query = select(_model)
         query = apply_path_filters(query, _model, _config.path_filters, path_params)
@@ -82,7 +91,7 @@ def options_endpoint(
         )
         query = apply_search(
             query,
-            q_param,
+            q,
             _model,
             _join_info.joined_models,
             _config.search_fields,
@@ -91,7 +100,7 @@ def options_endpoint(
         )
 
         explicitly_joined: set[str] = collect_needed_joins(
-            raw_params, sort_param, _join_info
+            filter_params, sort, _join_info
         )
         for rel_name in explicitly_joined:
             rel_attr = getattr(_model, rel_name)
@@ -99,7 +108,7 @@ def options_endpoint(
 
         query = apply_filters(
             query,
-            raw_params,
+            filter_params,
             _model,
             _join_info.joined_models,
             _config.filterable_fields,
@@ -116,7 +125,7 @@ def options_endpoint(
 
         query = apply_sort(
             query,
-            sort_param,
+            sort,
             _model,
             _join_info.joined_models,
             _config.sortable_fields,
@@ -144,6 +153,8 @@ def options_endpoint(
             page=pagination.page,
             items_per_page=pagination.items_per_page,
         )
+
+    inject_query_params(_handler, _config.filterable_fields)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

@@ -12,6 +12,7 @@ from crudit.exceptions import CruditConfigError
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, has_allowed_users_relationship
 from crudit.read.config import ReadConfig
+from crudit.signature import patch_param_annotation
 from crudit.utils import call_hook, get_error_responses
 
 
@@ -50,12 +51,12 @@ def read_endpoint(
 
     async def _handler(
         request: Request,
+        id: Any,  # annotation patched below to _pk_python_type
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Any:
-        pk_value = _pk_python_type(request.path_params["id"])
         pk_col = getattr(_model, _pk_field)
-        query = select(_model).where(pk_col == pk_value)
+        query = select(_model).where(pk_col == id)
 
         # Eager loads from schema-derived joins
         options = _join_info.eager_load_options(_model, set())
@@ -85,6 +86,8 @@ def read_endpoint(
             obj = await call_hook(_config.after_query, obj, request, current_user)
 
         return _schema.model_validate(obj, from_attributes=True)
+
+    patch_param_annotation(_handler, "id", _pk_python_type)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

@@ -12,6 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.signature import patch_param_annotation
 from crudit.update.config import UpdateConfig
 from crudit.utils import call_hook, get_error_responses
 
@@ -53,6 +54,7 @@ def update_endpoint(
 
     async def _handler(
         request: Request,
+        id: Any,  # annotation patched below to _pk_python_type
         body: BaseModel,  # annotation patched below to _update_schema
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
@@ -61,9 +63,8 @@ def update_endpoint(
         check_route_permissions(current_user, _config.login_required)
 
         # 2. Fetch existing object
-        pk_value = _pk_python_type(request.path_params["id"])
         pk_col = getattr(_model, _pk_field)
-        query = select(_model).where(pk_col == pk_value)
+        query = select(_model).where(pk_col == id)
 
         options = _join_info.eager_load_options(_model, set())
         if load_allowed_users:
@@ -118,7 +119,7 @@ def update_endpoint(
         await db.commit()
 
         # 11. Reload with eager-loaded relationships from read_schema
-        reload_q = select(_model).where(pk_col == pk_value)
+        reload_q = select(_model).where(pk_col == id)
         reload_options = _join_info.eager_load_options(_model, set())
         if reload_options:
             reload_q = reload_q.options(*reload_options)
@@ -131,7 +132,8 @@ def update_endpoint(
 
         return _read_schema.model_validate(obj, from_attributes=True)
 
-    _handler.__annotations__["body"] = _update_schema
+    patch_param_annotation(_handler, "id", _pk_python_type)
+    patch_param_annotation(_handler, "body", _update_schema)
 
     model_name = model.__name__
     deps = list(_config.dependencies)
