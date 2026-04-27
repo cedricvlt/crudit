@@ -134,6 +134,22 @@ async def test_date_lte_filter(seed, make_client):
 
 
 @pytest.mark.asyncio
+async def test_date_lte_includes_boundary_day(seed, make_client):
+    # created_at__lte=2024-01-15 must include Montmartre which has created_at=2024-01-15 00:00:00 UTC
+    async with await make_client(
+        ListConfig(
+            path_filters={},
+            filterable_fields=FILTERABLE,
+            login_required=False,
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?created_at__lte=2024-01-15")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert "Montmartre" in names
+
+
+@pytest.mark.asyncio
 async def test_multi_value_filter_as_or(seed, make_client):
     async with await make_client(
         ListConfig(

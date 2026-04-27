@@ -232,6 +232,26 @@ def _parse_key(raw_key: str) -> tuple[str, str]:
     return raw_key, "eq"
 
 
+def _is_datetime_col(col: Any) -> bool:
+    try:
+        python_type = col.property.columns[0].type.impl_instance.python_type
+    except Exception:
+        try:
+            python_type = col.property.columns[0].type.python_type
+        except Exception:
+            return False
+    return python_type is datetime
+
+
+def _is_date_only_string(value: str) -> bool:
+    """Return True if value is a bare date (YYYY-MM-DD) with no time component."""
+    try:
+        date.fromisoformat(value)
+        return "T" not in value and " " not in value and len(value) == 10
+    except ValueError:
+        return False
+
+
 def _build_expression(col: Any, operator: str, raw_value: str) -> Any:
     if operator in _DATE_PERIOD_OPERATORS:
         return _build_date_period_expression(col, operator, raw_value)
@@ -242,6 +262,13 @@ def _build_expression(col: Any, operator: str, raw_value: str) -> Any:
     if operator == "lt":
         return col < _coerce(col, raw_value)
     if operator == "lte":
+        # For datetime columns with a date-only string, treat as "before end of that day"
+        # so that records at any time on that date are included.
+        if _is_datetime_col(col) and _is_date_only_string(raw_value):
+            d = date.fromisoformat(raw_value)
+            next_day = d + timedelta(days=1)
+            coerced = datetime(next_day.year, next_day.month, next_day.day, tzinfo=timezone.utc)
+            return col < coerced
         return col <= _coerce(col, raw_value)
     if operator == "gt":
         return col > _coerce(col, raw_value)
