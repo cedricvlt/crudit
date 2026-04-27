@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -132,6 +133,16 @@ def _coerce(col: Any, value: str) -> Any:
 
     if python_type is bool:
         return value.lower() in ("true", "1", "yes")
+    if python_type is datetime:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if python_type is date:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return value
     try:
         return python_type(value)
     except (ValueError, TypeError):
