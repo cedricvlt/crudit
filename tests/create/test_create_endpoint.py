@@ -105,8 +105,10 @@ async def test_create_permission_dep_denied_returns_403(seed, make_create_client
 
     user = User(id=1, name="Alice", tenant_id=1)
 
-    async def deny_dep():
-        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    def deny_dep(*_perms):
+        async def dep():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return dep
 
     config = CreateConfig(
         login_required=True,
@@ -122,8 +124,10 @@ async def test_create_permission_dep_denied_returns_403(seed, make_create_client
 async def test_create_permission_dep_allowed_returns_201(seed, make_create_client, cleanup_districts):
     user = User(id=1, name="Alice", tenant_id=1)
 
-    async def allow_dep():
-        pass
+    def allow_dep(*_perms):
+        async def dep():
+            pass
+        return dep
 
     config = CreateConfig(
         login_required=True,

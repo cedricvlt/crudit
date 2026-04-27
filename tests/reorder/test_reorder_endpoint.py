@@ -107,8 +107,10 @@ async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_clie
 
     user = User(id=1, name="Alice", tenant_id=1)
 
-    async def deny_dep():
-        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    def deny_dep(*_perms):
+        async def dep():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return dep
 
     config = ReorderConfig(
         login_required=True,
@@ -123,8 +125,10 @@ async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_clie
 async def test_reorder_permission_dep_allowed_returns_204(seed, make_reorder_client):
     user = User(id=1, name="Alice", tenant_id=1)
 
-    async def allow_dep():
-        pass
+    def allow_dep(*_perms):
+        async def dep():
+            pass
+        return dep
 
     config = ReorderConfig(
         login_required=True,

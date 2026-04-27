@@ -14,7 +14,7 @@ from crudit.permissions import check_object_permissions, has_allowed_users_relat
 from crudit.read.config import ReadConfig
 from crudit.types import PermissionDepFn
 from crudit.signature import patch_param_annotation
-from crudit.utils import call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses
 
 
 def read_endpoint(
@@ -96,7 +96,7 @@ def read_endpoint(
     model_name = model.__name__
     deps = list(_config.dependencies)
     if permission_dep is not None:
-        deps.append(Depends(permission_dep))
+        deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
     router.add_api_route(
         path,
         _handler,

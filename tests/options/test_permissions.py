@@ -38,8 +38,10 @@ async def test_permission_dep_deny(seed, make_client):
     from fastapi import HTTPException
     from tests.conftest import User
 
-    async def deny_dep():
-        raise HTTPException(status_code=403, detail="Insufficient permissions.")
+    def deny_dep(*_perms):
+        async def dep():
+            raise HTTPException(status_code=403, detail="Insufficient permissions.")
+        return dep
 
     async with await make_client(
         OptionsConfig(
@@ -59,8 +61,10 @@ async def test_permission_dep_deny(seed, make_client):
 async def test_permission_dep_allow(seed, make_client):
     from tests.conftest import User
 
-    async def allow_dep():
-        pass
+    def allow_dep(*_perms):
+        async def dep():
+            pass
+        return dep
 
     async with await make_client(
         OptionsConfig(

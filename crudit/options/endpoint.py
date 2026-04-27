@@ -24,7 +24,7 @@ from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OffsetPaginatedResponse, OptionItem
 from crudit.signature import inject_query_params
-from crudit.utils import call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses
 
 
 class _DefaultOptionSchema(BaseModel):
@@ -164,7 +164,7 @@ def options_endpoint(
     model_name = model.__name__
     deps = list(_config.dependencies)
     if permission_dep is not None:
-        deps.append(Depends(permission_dep))
+        deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
     router.add_api_route(
         path,
         _handler,

@@ -12,7 +12,7 @@ from crudit.permissions import check_object_permissions, check_route_permissions
 from crudit.read.endpoint import _detect_pk_field
 from crudit.types import PermissionDepFn
 from crudit.signature import patch_param_annotation
-from crudit.utils import call_hook, get_error_responses
+from crudit.utils import bind_perms, call_hook, get_error_responses
 
 
 def delete_endpoint(
@@ -91,7 +91,7 @@ def delete_endpoint(
     model_name = model.__name__
     deps = list(_config.dependencies)
     if permission_dep is not None:
-        deps.append(Depends(permission_dep))
+        deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
     router.add_api_route(
         path,
         _handler,
