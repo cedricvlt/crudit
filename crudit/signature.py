@@ -10,9 +10,11 @@ def inject_query_params(handler: Any, filterable_fields: list[str]) -> None:
     """
     Extend handler.__signature__ with explicit query params for each filterable field.
 
-    Simple field names (e.g. "name") become `name: str | None = None`.
-    Dotted field names (e.g. "city.name") become `city__name: str | None = None`
+    Simple field names (e.g. "name") become `name: list[str] | None = None`.
+    Dotted field names (e.g. "city.name") become `city__name: list[str] | None = None`
     with a Query(alias="city.name") so the actual query param name stays dotted.
+    Using list[str] allows FastAPI to accept multiple values for the same param,
+    which are then combined with OR in apply_filters.
 
     The handler must declare **_filter_kwargs to absorb the injected values at
     call time (we still read filters from request.query_params to support operators).
@@ -27,10 +29,10 @@ def inject_query_params(handler: Any, filterable_fields: list[str]) -> None:
     for field in filterable_fields:
         if "." in field:
             param_name = field.replace(".", "__")
-            annotation = Annotated[str | None, Query(alias=field)]
+            annotation = Annotated[list[str] | None, Query(alias=field)]
         else:
             param_name = field
-            annotation = str | None
+            annotation = Annotated[list[str] | None, Query()]
         filter_params.append(
             inspect.Parameter(
                 name=param_name,

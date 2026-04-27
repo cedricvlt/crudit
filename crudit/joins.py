@@ -73,7 +73,7 @@ def resolve_joins(model: type[DeclarativeBase], schema: type[BaseModel]) -> Join
 
 
 def collect_needed_joins(
-    filter_params: dict[str, str],
+    filter_params: dict[str, list[str]],
     sort_param: str | None,
     join_info: JoinInfo,
 ) -> set[str]:

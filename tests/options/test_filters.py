@@ -76,6 +76,23 @@ async def test_custom_filter_fn(seed, make_client):
 
 
 @pytest.mark.asyncio
+async def test_multi_value_filter_as_or(seed, make_client):
+    async with await make_client(
+        OptionsConfig(
+            path_filters={},
+            login_required=False,
+            label_field="name",
+            filterable_fields=["city_id"],
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?city_id=1&city_id=2")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        labels = {item["label"] for item in data}
+        assert labels == {"Montmartre", "Marais", "Downtown", "Uptown"}
+
+
+@pytest.mark.asyncio
 async def test_default_filters(seed, make_client):
     async with await make_client(
         OptionsConfig(

@@ -13,10 +13,10 @@ from crudit.joins import collect_needed_joins, resolve_joins
 from crudit.list.config import ListConfig
 from crudit.types import PermissionDepFn
 from crudit.list.filters import (
-    _RESERVED_PARAMS,
     apply_default_filters,
     apply_filters,
     apply_path_filters,
+    extract_filter_params,
 )
 from crudit.list.pagination import apply_pagination, resolve_pagination
 from crudit.list.search import apply_search
@@ -67,11 +67,7 @@ def list_endpoint(
         count_only: Annotated[bool, Query(alias="countOnly")] = False,
         **_filter_kwargs,  # absorbs filterable-field params injected via __signature__
     ) -> Any:
-        filter_params = {
-            k: v
-            for k, v in request.query_params.items()
-            if k not in _RESERVED_PARAMS
-        }
+        filter_params = extract_filter_params(request.query_params)
         path_params = dict(request.path_params)
 
         query = select(_model)

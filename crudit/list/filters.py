@@ -4,11 +4,21 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
 from crudit.joins import resolve_nested_column
 from crudit.types import FilterFn
+
+
+def extract_filter_params(request_query_params: Any) -> dict[str, list[str]]:
+    """Collect non-reserved query params, grouping multiple values per key."""
+    result: dict[str, list[str]] = {}
+    for k, v in request_query_params.multi_items():
+        if k not in _RESERVED_PARAMS:
+            result.setdefault(k, []).append(v)
+    return result
 
 
 def apply_path_filters(
@@ -42,14 +52,14 @@ _OPERATORS = frozenset(
 
 def apply_filters(
     query: Select,
-    raw_params: dict[str, str],
+    raw_params: dict[str, list[str]],
     model: type[DeclarativeBase],
     joined_models: dict[str, type],
     filterable_fields: list[str],
     filter_fns: dict[str, FilterFn],
     current_user: Any,
 ) -> Select:
-    for raw_key, raw_value in raw_params.items():
+    for raw_key, raw_values in raw_params.items():
         if raw_key in _RESERVED_PARAMS:
             continue
 
@@ -62,12 +72,15 @@ def apply_filters(
             )
 
         if field_path in filter_fns:
-            query = filter_fns[field_path](query, raw_value, current_user)
+            # custom filter_fn receives the first value for backward compatibility
+            query = filter_fns[field_path](query, raw_values[0], current_user)
             continue
 
         col = resolve_nested_column(field_path, model, joined_models)
-        expr = _build_expression(col, operator, raw_value)
-        query = query.where(expr)
+        if len(raw_values) == 1:
+            query = query.where(_build_expression(col, operator, raw_values[0]))
+        else:
+            query = query.where(or_(*[_build_expression(col, operator, v) for v in raw_values]))
 
     return query
 

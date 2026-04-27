@@ -122,6 +122,23 @@ async def test_date_lte_filter(seed, make_client):
 
 
 @pytest.mark.asyncio
+async def test_multi_value_filter_as_or(seed, make_client):
+    async with await make_client(
+        ListConfig(
+            path_filters={},
+            filterable_fields=["city_id"],
+            login_required=False,
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?city_id=1&city_id=2")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        ids = {d["city_id"] for d in data}
+        assert ids == {1, 2}
+        assert len(data) == 4  # all districts from both cities
+
+
+@pytest.mark.asyncio
 async def test_default_filters(seed, make_client):
     async with await make_client(
         ListConfig(
