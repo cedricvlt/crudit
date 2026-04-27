@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest_asyncio
 from pydantic import BaseModel
@@ -121,8 +121,10 @@ async def seed(db_session: AsyncSession):
     city1 = City(id=1, name="Paris")
     city2 = City(id=2, name="London")
 
-    d1 = District(id=1, name="Montmartre", city_id=1, tenant_id=1, is_active=True)
-    d2 = District(id=2, name="Marais", city_id=1, tenant_id=1, is_active=False)
+    d1 = District(id=1, name="Montmartre", city_id=1, tenant_id=1, is_active=True,
+                  created_at=datetime(2024, 1, 15, tzinfo=timezone.utc))
+    d2 = District(id=2, name="Marais", city_id=1, tenant_id=1, is_active=False,
+                  created_at=datetime(2024, 6, 1, tzinfo=timezone.utc))
     d3 = District(id=3, name="Downtown", city_id=2, tenant_id=2, is_active=True)
     d4 = District(id=4, name="Uptown", city_id=2, tenant_id=2, is_active=True)
 

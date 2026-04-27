@@ -4,7 +4,7 @@ import pytest
 from crudit import ListConfig
 
 
-FILTERABLE = ["name", "is_active", "city.name"]
+FILTERABLE = ["name", "is_active", "created_at", "city.name"]
 
 
 @pytest.mark.asyncio
@@ -87,6 +87,38 @@ async def test_custom_filter_fn(seed, make_client):
         assert r.status_code == 200
         data = r.json()["data"]
         assert all(d["is_active"] for d in data)
+
+
+@pytest.mark.asyncio
+async def test_date_gte_filter(seed, make_client):
+    async with await make_client(
+        ListConfig(
+            path_filters={},
+            filterable_fields=FILTERABLE,
+            login_required=False,
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?created_at__gte=2024-03-01")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert len(data) == 1
+        assert data[0]["name"] == "Marais"
+
+
+@pytest.mark.asyncio
+async def test_date_lte_filter(seed, make_client):
+    async with await make_client(
+        ListConfig(
+            path_filters={},
+            filterable_fields=FILTERABLE,
+            login_required=False,
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?created_at__lte=2024-03-01")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert len(data) == 1
+        assert data[0]["name"] == "Montmartre"
 
 
 @pytest.mark.asyncio
