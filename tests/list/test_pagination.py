@@ -8,9 +8,9 @@ from crudit.list.pagination import resolve_pagination
 def test_page_mode_defaults():
     p = resolve_pagination(None, None, None, None)
     assert p.page == 1
-    assert p.items_per_page == 25
+    assert p.items_per_page == 20
     assert p.sql_offset == 0
-    assert p.sql_limit == 25
+    assert p.sql_limit == 20
 
 
 def test_page_mode_explicit():

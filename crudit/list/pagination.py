@@ -31,7 +31,7 @@ def resolve_pagination(
     # Offset mode takes priority if either offset or limit is present
     if offset is not None or limit is not None:
         sql_offset = offset or 0
-        sql_limit = limit or 25
+        sql_limit = limit or 20
         page_num = sql_offset // sql_limit + 1
         return PaginationResult(
             sql_offset=sql_offset,
@@ -42,7 +42,7 @@ def resolve_pagination(
 
     # Page mode
     page_num = page or 1
-    per_page = items_per_page or 25
+    per_page = items_per_page or 20
     sql_offset = (page_num - 1) * per_page
     return PaginationResult(
         sql_offset=sql_offset,

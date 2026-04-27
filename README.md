@@ -767,7 +767,7 @@ All list endpoints return the same paginated envelope:
   "totalCount": 42,
   "hasMore": true,
   "page": 1,
-  "itemsPerPage": 25
+  "itemsPerPage": 
 }
 ```
 
@@ -775,17 +775,17 @@ All list endpoints return the same paginated envelope:
 
 ## URL parameters reference
 
-| Parameter | Example | Description |
-|---|---|---|
+| Parameter | Example | Description                                                                                                       |
+|---|---|-------------------------------------------------------------------------------------------------------------------|
 | `sort` | `?sort=-name,city.name` | Comma-separated fields. Prefix `-` for DESC. Nested fields use `.` notation. Falls back to `model._order_fields`. |
-| `page` | `?page=2` | Page number (1-based). Combined with `itemsPerPage`. |
-| `itemsPerPage` | `?itemsPerPage=10` | Results per page. Default: 25. |
-| `offset` | `?offset=50` | Offset-based pagination (alternative to page mode). |
-| `limit` | `?limit=10` | Limit for offset pagination. |
-| `q` | `?q=paris` | Global search — ILIKE across all `search_fields` (OR). |
-| `countOnly` | `?countOnly=true` | Returns `{"totalCount": N}` only, skipping data fetch. |
-| `<field>` | `?is_active=true` | Filter on any whitelisted field. |
-| `<field>__<op>` | `?name__ilike=%par%` | Filter with explicit operator (see below). |
+| `page` | `?page=2` | Page number (1-based). Combined with `itemsPerPage`.                                                              |
+| `itemsPerPage` | `?itemsPerPage=10` | Results per page. Default: 20.                                                                                    |
+| `offset` | `?offset=50` | Offset-based pagination (alternative to page mode).                                                               |
+| `limit` | `?limit=10` | Limit for offset pagination.                                                                                      |
+| `q` | `?q=paris` | Global search — ILIKE across all `search_fields` (OR).                                                            |
+| `countOnly` | `?countOnly=true` | Returns `{"totalCount": N}` only, skipping data fetch.                                                            |
+| `<field>` | `?is_active=true` | Filter on any whitelisted field.                                                                                  |
+| `<field>__<op>` | `?name__ilike=%par%` | Filter with explicit operator (see below).                                                                        |
 
 ### Filter operators
 
@@ -1024,7 +1024,7 @@ options_endpoint(
 ```
 
 ```
-GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=25
+GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=
 → {"data": [{"id": 1, "label": "Montmartre"}], "totalCount": 1, "hasMore": false}
 ```
 

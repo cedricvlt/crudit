@@ -16,7 +16,7 @@ async def test_ilike_filter(seed, make_client):
             login_required=False,
         )
     ) as client:
-        r = await client.get("/cities/1/districts?name__ilike=%25arais%25")
+        r = await client.get("/cities/1/districts?name__ilike=%arais%")
         assert r.status_code == 200
         data = r.json()["data"]
         assert len(data) == 1
