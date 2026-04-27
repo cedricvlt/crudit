@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+from datetime import date
+from unittest.mock import patch
+
+import crudit.list.filters as filters_module
 import pytest
 from crudit import ListConfig
+
+
+def _mock_date(fixed: date):
+    class _D(date):
+        @classmethod
+        def today(cls):
+            return fixed
+    return _D
 
 
 FILTERABLE = ["name", "is_active", "created_at", "city.name"]
@@ -151,3 +163,118 @@ async def test_default_filters(seed, make_client):
         assert r.status_code == 200
         data = r.json()["data"]
         assert all(d["is_active"] for d in data)
+
+
+# ---------------------------------------------------------------------------
+# Date period filters
+# Seed: Montmartre=2024-01-15, Marais=2024-06-01
+# ---------------------------------------------------------------------------
+
+_DATE_CONFIG = ListConfig(
+    path_filters={},
+    filterable_fields=FILTERABLE,
+    login_required=False,
+)
+
+
+@pytest.mark.asyncio
+async def test_year_filter(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__year=2024")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre", "Marais"}
+
+
+@pytest.mark.asyncio
+async def test_quarter_filter_q1(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__quarter=2024-Q1")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre"}
+
+
+@pytest.mark.asyncio
+async def test_quarter_filter_q2(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__quarter=2024-Q2")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Marais"}
+
+
+@pytest.mark.asyncio
+async def test_month_filter(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__month=2024-01")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre"}
+
+
+@pytest.mark.asyncio
+async def test_week_filter(seed, make_client):
+    # Jan 15 2024 is ISO week W03
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__week=2024-W03")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre"}
+
+
+@pytest.mark.asyncio
+async def test_relative_yesterday(seed, make_client):
+    # today=2024-01-16 → yesterday=2024-01-15 → Montmartre
+    async with await make_client(_DATE_CONFIG) as client:
+        with patch.object(filters_module, "date", _mock_date(date(2024, 1, 16))):
+            r = await client.get("/cities/1/districts?created_at__relative=yesterday")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre"}
+
+
+@pytest.mark.asyncio
+async def test_relative_this_year(seed, make_client):
+    # today=2024-06-15 → this-year=[2024-01-01, 2025-01-01) → both
+    async with await make_client(_DATE_CONFIG) as client:
+        with patch.object(filters_module, "date", _mock_date(date(2024, 6, 15))):
+            r = await client.get("/cities/1/districts?created_at__relative=this-year")
+        assert r.status_code == 200
+        names = {d["name"] for d in r.json()["data"]}
+        assert names == {"Montmartre", "Marais"}
+
+
+@pytest.mark.asyncio
+async def test_invalid_year(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__year=notayear")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invalid_quarter(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__quarter=2024-Q5")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invalid_month(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__month=2024-13")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invalid_week(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__week=bad")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_invalid_relative(seed, make_client):
+    async with await make_client(_DATE_CONFIG) as client:
+        r = await client.get("/cities/1/districts?created_at__relative=someday")
+        assert r.status_code == 400

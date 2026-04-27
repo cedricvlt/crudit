@@ -802,6 +802,22 @@ All list endpoints return the same paginated envelope:
 
 Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must be in the Pydantic schema (auto-joined via `joinedload`).
 
+### Date period filters
+
+Five additional operators collapse an entire time period into a `>= start AND < end` range. They work on both `date` and `datetime` columns (datetime columns use UTC-aware bounds automatically).
+
+| Operator | Value format | Example |
+|---|---|---|
+| `__year` | `YYYY` | `?created_at__year=2024` |
+| `__quarter` | `YYYY-Q[1-4]` | `?created_at__quarter=2024-Q3` |
+| `__month` | `YYYY-MM` | `?created_at__month=2024-06` |
+| `__week` | `YYYY-Www` (ISO 8601) | `?created_at__week=2024-W11` |
+| `__relative` | keyword (see below) | `?created_at__relative=last-month` |
+
+Supported `__relative` keywords: `today`, `yesterday`, `this-week`, `last-week`, `this-month`, `last-month`, `this-quarter`, `last-quarter`, `this-year`, `last-year`.
+
+Invalid period values return **400**.
+
 ---
 
 ## Auto-join detection

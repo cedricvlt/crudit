@@ -107,3 +107,19 @@ async def test_default_filters(seed, make_client):
         data = r.json()["data"]
         assert len(data) == 1
         assert data[0]["label"] == "Montmartre"
+
+
+@pytest.mark.asyncio
+async def test_year_filter(seed, make_client):
+    async with await make_client(
+        OptionsConfig(
+            path_filters={},
+            login_required=False,
+            label_field="name",
+            filterable_fields=["created_at"],
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?created_at__year=2024")
+        assert r.status_code == 200
+        labels = {item["label"] for item in r.json()["data"]}
+        assert labels == {"Montmartre", "Marais"}

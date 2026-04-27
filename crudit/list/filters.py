@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
@@ -45,9 +45,11 @@ _RESERVED_PARAMS = frozenset(
     {"sort", "page", "itemsPerPage", "offset", "limit", "q", "countOnly"}
 )
 
+_DATE_PERIOD_OPERATORS = frozenset({"year", "quarter", "month", "week", "relative"})
+
 _OPERATORS = frozenset(
     {"eq", "ne", "lt", "lte", "gt", "gte", "in", "like", "ilike", "isnull"}
-)
+) | _DATE_PERIOD_OPERATORS
 
 
 def apply_filters(
@@ -98,6 +100,128 @@ def apply_default_filters(
     return query
 
 
+def _range_year(value: str) -> tuple[date, date]:
+    try:
+        year = int(value)
+    except ValueError:
+        raise HTTPException(400, detail=f"Invalid __year value: '{value}'. Expected YYYY.")
+    return date(year, 1, 1), date(year + 1, 1, 1)
+
+
+def _range_quarter(value: str) -> tuple[date, date]:
+    try:
+        year_str, q_str = value.split("-")
+        year = int(year_str)
+        q = int(q_str[1:])
+        if not (1 <= q <= 4):
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise HTTPException(400, detail=f"Invalid __quarter value: '{value}'. Expected YYYY-Q[1-4].")
+    start_month = (q - 1) * 3 + 1
+    end_month = start_month + 3
+    end_year = year + (1 if end_month > 12 else 0)
+    end_month = end_month if end_month <= 12 else end_month - 12
+    return date(year, start_month, 1), date(end_year, end_month, 1)
+
+
+def _range_month(value: str) -> tuple[date, date]:
+    try:
+        if len(value) != 7 or value[4] != "-":
+            raise ValueError
+        year, month = int(value[:4]), int(value[5:7])
+        if not (1 <= month <= 12):
+            raise ValueError
+    except (ValueError, IndexError):
+        raise HTTPException(400, detail=f"Invalid __month value: '{value}'. Expected YYYY-MM.")
+    next_month = month + 1
+    next_year = year + (1 if next_month > 12 else 0)
+    next_month = next_month if next_month <= 12 else 1
+    return date(year, month, 1), date(next_year, next_month, 1)
+
+
+def _range_week(value: str) -> tuple[date, date]:
+    try:
+        year_str, w_str = value.split("-")
+        year = int(year_str)
+        week = int(w_str[1:])
+        start = date.fromisocalendar(year, week, 1)
+    except (ValueError, AttributeError):
+        raise HTTPException(400, detail=f"Invalid __week value: '{value}'. Expected YYYY-Www.")
+    return start, start + timedelta(days=7)
+
+
+_RELATIVE_TERMS = frozenset({
+    "today", "yesterday",
+    "this-week", "last-week",
+    "this-month", "last-month",
+    "this-quarter", "last-quarter",
+    "this-year", "last-year",
+})
+
+
+def _range_relative(value: str) -> tuple[date, date]:
+    if value not in _RELATIVE_TERMS:
+        raise HTTPException(
+            400,
+            detail=f"Invalid __relative value: '{value}'. "
+                   f"Supported: {', '.join(sorted(_RELATIVE_TERMS))}.",
+        )
+    today = date.today()
+    if value == "today":
+        return today, today + timedelta(days=1)
+    if value == "yesterday":
+        return today - timedelta(days=1), today
+    if value == "this-week":
+        monday = today - timedelta(days=today.weekday())
+        return monday, monday + timedelta(days=7)
+    if value == "last-week":
+        monday = today - timedelta(days=today.weekday() + 7)
+        return monday, monday + timedelta(days=7)
+    if value == "this-month":
+        return _range_month(f"{today.year:04d}-{today.month:02d}")
+    if value == "last-month":
+        first = (date(today.year, today.month, 1) - timedelta(days=1)).replace(day=1)
+        return _range_month(f"{first.year:04d}-{first.month:02d}")
+    if value == "this-quarter":
+        q = (today.month - 1) // 3 + 1
+        return _range_quarter(f"{today.year}-Q{q}")
+    if value == "last-quarter":
+        q = (today.month - 1) // 3 + 1
+        prev_q = q - 1 if q > 1 else 4
+        prev_year = today.year if q > 1 else today.year - 1
+        return _range_quarter(f"{prev_year}-Q{prev_q}")
+    if value == "this-year":
+        return _range_year(str(today.year))
+    return _range_year(str(today.year - 1))
+
+
+_RANGE_FNS = {
+    "year": _range_year,
+    "quarter": _range_quarter,
+    "month": _range_month,
+    "week": _range_week,
+    "relative": _range_relative,
+}
+
+
+def _build_date_period_expression(col: Any, operator: str, raw_value: str) -> Any:
+    start_date, end_date = _RANGE_FNS[operator](raw_value)
+    python_type = None
+    try:
+        python_type = col.property.columns[0].type.impl_instance.python_type
+    except Exception:  # noqa: BLE001
+        try:
+            python_type = col.property.columns[0].type.python_type
+        except Exception:  # noqa: BLE001
+            pass
+    if python_type is datetime:
+        start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
+        end = datetime(end_date.year, end_date.month, end_date.day, tzinfo=timezone.utc)
+    else:
+        start, end = start_date, end_date
+    return and_(col >= start, col < end)
+
+
 def _parse_key(raw_key: str) -> tuple[str, str]:
     """Split 'city.name__ilike' into ('city.name', 'ilike'). Default operator is 'eq'."""
     if "__" in raw_key:
@@ -109,6 +233,8 @@ def _parse_key(raw_key: str) -> tuple[str, str]:
 
 
 def _build_expression(col: Any, operator: str, raw_value: str) -> Any:
+    if operator in _DATE_PERIOD_OPERATORS:
+        return _build_date_period_expression(col, operator, raw_value)
     if operator == "eq":
         return col == _coerce(col, raw_value)
     if operator == "ne":
