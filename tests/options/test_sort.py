@@ -49,7 +49,7 @@ async def test_sort_nested_field(seed, make_client):
     ) as client:
         r = await client.get("/cities/1/districts?sort=city.name,name")
         assert r.status_code == 200
-        assert r.json()["total_count"] == 2
+        assert r.json()["totalCount"] == 2
 
 
 @pytest.mark.asyncio

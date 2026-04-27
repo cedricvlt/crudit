@@ -31,7 +31,7 @@ def apply_path_filters(
     return query
 
 _RESERVED_PARAMS = frozenset(
-    {"sort", "page", "items_per_page", "offset", "limit", "q", "count_only"}
+    {"sort", "page", "itemsPerPage", "offset", "limit", "q", "countOnly"}
 )
 
 _OPERATORS = frozenset(

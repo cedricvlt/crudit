@@ -50,11 +50,11 @@ async def test_has_more_true(seed, make_client):
             login_required=False,
         )
     ) as client:
-        r = await client.get("/cities/1/districts?page=1&items_per_page=1")
+        r = await client.get("/cities/1/districts?page=1&itemsPerPage=1")
         assert r.status_code == 200
         body = r.json()
-        assert body["has_more"] is True
-        assert body["total_count"] == 2
+        assert body["hasMore"] is True
+        assert body["totalCount"] == 2
 
 
 @pytest.mark.asyncio
@@ -65,10 +65,10 @@ async def test_has_more_false(seed, make_client):
             login_required=False,
         )
     ) as client:
-        r = await client.get("/cities/1/districts?items_per_page=100")
+        r = await client.get("/cities/1/districts?itemsPerPage=100")
         assert r.status_code == 200
         body = r.json()
-        assert body["has_more"] is False
+        assert body["hasMore"] is False
 
 
 @pytest.mark.asyncio
@@ -79,8 +79,8 @@ async def test_count_only(seed, make_client):
             login_required=False,
         )
     ) as client:
-        r = await client.get("/cities/1/districts?count_only=true")
+        r = await client.get("/cities/1/districts?countOnly=true")
         assert r.status_code == 200
         body = r.json()
-        assert body == {"total_count": 2}
+        assert body == {"totalCount": 2}
         assert "data" not in body

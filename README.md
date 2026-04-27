@@ -53,7 +53,7 @@ read_endpoint(
 This registers:
 
 ```
-GET /districts?q=mar&sort=-name&page=2&items_per_page=20&is_active=true
+GET /districts?q=mar&sort=-name&page=2&itemsPerPage=20&is_active=true
 GET /districts/42
 ```
 
@@ -738,7 +738,7 @@ Status codes:
 
 ## Options endpoint response format
 
-Options endpoints return an offset-paginated envelope with only `id` and `label` per item. Unlike the list endpoint, `page` and `items_per_page` are not included — only offset/limit-based pagination is supported.
+Options endpoints return an offset-paginated envelope with only `id` and `label` per item. Unlike the list endpoint, `page` and `itemsPerPage` are not included — only offset/limit-based pagination is supported.
 
 ```json
 {
@@ -746,8 +746,8 @@ Options endpoints return an offset-paginated envelope with only `id` and `label`
     { "id": 1, "label": "Paris — Montmartre" },
     { "id": 2, "label": "Paris — Marais" }
   ],
-  "total_count": 2,
-  "has_more": false
+  "totalCount": 2,
+  "hasMore": false
 }
 ```
 
@@ -764,10 +764,10 @@ All list endpoints return the same paginated envelope:
   "data": [
     { "id": 1, "name": "Montmartre", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" } }
   ],
-  "total_count": 42,
-  "has_more": true,
+  "totalCount": 42,
+  "hasMore": true,
   "page": 1,
-  "items_per_page": 25
+  "itemsPerPage": 25
 }
 ```
 
@@ -778,12 +778,12 @@ All list endpoints return the same paginated envelope:
 | Parameter | Example | Description |
 |---|---|---|
 | `sort` | `?sort=-name,city.name` | Comma-separated fields. Prefix `-` for DESC. Nested fields use `.` notation. Falls back to `model._order_fields`. |
-| `page` | `?page=2` | Page number (1-based). Combined with `items_per_page`. |
-| `items_per_page` | `?items_per_page=10` | Results per page. Default: 25. |
+| `page` | `?page=2` | Page number (1-based). Combined with `itemsPerPage`. |
+| `itemsPerPage` | `?itemsPerPage=10` | Results per page. Default: 25. |
 | `offset` | `?offset=50` | Offset-based pagination (alternative to page mode). |
 | `limit` | `?limit=10` | Limit for offset pagination. |
 | `q` | `?q=paris` | Global search — ILIKE across all `search_fields` (OR). |
-| `count_only` | `?count_only=true` | Returns `{"total_count": N}` only, skipping data fetch. |
+| `countOnly` | `?countOnly=true` | Returns `{"totalCount": N}` only, skipping data fetch. |
 | `<field>` | `?is_active=true` | Filter on any whitelisted field. |
 | `<field>__<op>` | `?name__ilike=%par%` | Filter with explicit operator (see below). |
 
@@ -995,7 +995,7 @@ def options_endpoint(
 ) -> None:
 ```
 
-`schema` is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. It defaults to a minimal schema with a `name: str` field — pass an explicit schema when `label_fn` or filter/sort fields access related objects. The endpoint always returns `OffsetPaginatedResponse[OptionItem]` (no `page` or `items_per_page`).
+`schema` is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. It defaults to a minimal schema with a `name: str` field — pass an explicit schema when `label_fn` or filter/sort fields access related objects. The endpoint always returns `OffsetPaginatedResponse[OptionItem]` (no `page` or `itemsPerPage`).
 
 **Usage example:**
 
@@ -1025,7 +1025,7 @@ options_endpoint(
 
 ```
 GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=25
-→ {"data": [{"id": 1, "label": "Montmartre"}], "total_count": 1, "has_more": false}
+→ {"data": [{"id": 1, "label": "Montmartre"}], "totalCount": 1, "hasMore": false}
 ```
 
 ---

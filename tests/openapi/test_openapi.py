@@ -127,7 +127,7 @@ class TestListOpenAPI:
         schema = _build_schema(self._register)
         op = _op(schema, "get", "/items")
         params = _query_params(op)
-        assert {"page", "items_per_page", "offset", "limit"}.issubset(params)
+        assert {"page", "itemsPerPage", "offset", "limit"}.issubset(params)
 
     def test_search_and_sort_query_params(self):
         schema = _build_schema(self._register)
@@ -139,7 +139,7 @@ class TestListOpenAPI:
     def test_count_only_query_param(self):
         schema = _build_schema(self._register)
         op = _op(schema, "get", "/items")
-        assert "count_only" in _query_params(op)
+        assert "countOnly" in _query_params(op)
 
     def test_filterable_fields_appear_as_query_params(self):
         def register(router):
@@ -190,12 +190,12 @@ class TestListOpenAPI:
         else:
             resolved = content
         props = resolved.get("properties", {})
-        assert {"data", "total_count", "has_more", "page", "items_per_page"}.issubset(props)
+        assert {"data", "totalCount", "hasMore", "page", "itemsPerPage"}.issubset(props)
 
     def test_permission_dep_adds_no_spurious_query_params(self):
         schema = _build_schema(self._register)
         op = _op(schema, "get", "/items")
-        expected = {"q", "sort", "page", "items_per_page", "offset", "limit", "count_only"}
+        expected = {"q", "sort", "page", "itemsPerPage", "offset", "limit", "countOnly"}
         extra = _query_params(op) - expected
         assert extra == set(), f"Unexpected query params: {extra}"
 
@@ -480,12 +480,12 @@ class TestOptionsOpenAPI:
         op = _op(schema, "get", "/items/options")
         params = _query_params(op)
         assert "page" not in params
-        assert "items_per_page" not in params
+        assert "itemsPerPage" not in params
 
     def test_no_count_only_param(self):
         schema = _build_schema(self._register)
         op = _op(schema, "get", "/items/options")
-        assert "count_only" not in _query_params(op)
+        assert "countOnly" not in _query_params(op)
 
     def test_filterable_fields_appear_as_query_params(self):
         def register(router):

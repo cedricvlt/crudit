@@ -34,7 +34,7 @@ async def test_search_no_match(seed, make_client):
     ) as client:
         r = await client.get("/cities/1/districts?q=xyz")
         assert r.status_code == 200
-        assert r.json()["total_count"] == 0
+        assert r.json()["totalCount"] == 0
 
 
 @pytest.mark.asyncio

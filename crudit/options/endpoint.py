@@ -170,6 +170,7 @@ def options_endpoint(
         _handler,
         methods=["GET"],
         response_model=OffsetPaginatedResponse[OptionItem],
+        response_model_by_alias=True,
         tags=_config.tags or None,
         summary=summary or f"List {model_name} option items for selection.",
         dependencies=deps,

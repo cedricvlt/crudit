@@ -119,4 +119,4 @@ async def test_allowed_users_row_level_filter(seed, make_client):
         r = await client.get("/cities/1/districts")
         assert r.status_code == 200
         # Both districts match tenant_id filter (tenant 1), so both visible
-        assert r.json()["total_count"] == 2
+        assert r.json()["totalCount"] == 2

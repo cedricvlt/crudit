@@ -19,8 +19,8 @@ async def test_offset_limit_pagination(seed, make_client):
         assert r.status_code == 200
         body = r.json()
         assert len(body["data"]) == 1
-        assert body["has_more"] is True
-        assert body["total_count"] == 2
+        assert body["hasMore"] is True
+        assert body["totalCount"] == 2
 
 
 @pytest.mark.asyncio
@@ -50,4 +50,4 @@ async def test_no_more_when_exhausted(seed, make_client):
         )
     ) as client:
         r = await client.get("/cities/1/districts?limit=100")
-        assert r.json()["has_more"] is False
+        assert r.json()["hasMore"] is False

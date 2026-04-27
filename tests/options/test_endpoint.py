@@ -23,10 +23,10 @@ async def test_response_envelope(seed, make_client):
         assert r.status_code == 200
         body = r.json()
         assert "data" in body
-        assert "total_count" in body
-        assert "has_more" in body
+        assert "totalCount" in body
+        assert "hasMore" in body
         assert "page" not in body
-        assert "items_per_page" not in body
+        assert "itemsPerPage" not in body
 
 
 @pytest.mark.asyncio
@@ -187,7 +187,7 @@ async def test_after_query_hook(seed, make_client):
     ) as client:
         r = await client.get("/cities/1/districts")
         assert r.status_code == 200
-        assert len(seen) == r.json()["total_count"]
+        assert len(seen) == r.json()["totalCount"]
 
 
 @pytest.mark.asyncio

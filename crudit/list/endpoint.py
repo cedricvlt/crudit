@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -61,10 +61,10 @@ def list_endpoint(
         q: str | None = None,
         sort: str | None = None,
         page: int | None = None,
-        items_per_page: int | None = None,
+        items_per_page: Annotated[int | None, Query(alias="itemsPerPage")] = None,
         offset: int | None = None,
         limit: int | None = None,
-        count_only: bool = False,
+        count_only: Annotated[bool, Query(alias="countOnly")] = False,
         **_filter_kwargs,  # absorbs filterable-field params injected via __signature__
     ) -> Any:
         filter_params = {
@@ -118,7 +118,7 @@ def list_endpoint(
         total_count = (await db.execute(count_query)).scalar_one()
 
         if count_only:
-            return JSONResponse({"total_count": total_count})
+            return JSONResponse({"totalCount": total_count})
 
         query = apply_sort(
             query,
@@ -163,6 +163,7 @@ def list_endpoint(
         _handler,
         methods=["GET"],
         response_model=PaginatedResponse[_schema],
+        response_model_by_alias=True,
         tags=_config.tags or None,
         summary=summary or f"List {model_name} rows from the database.",
         dependencies=deps,
