@@ -82,10 +82,10 @@ async def test_multi_value_filter_as_or(seed, make_client):
             path_filters={},
             login_required=False,
             label_field="name",
-            filterable_fields=["city_id"],
+            filterable_fields=["tenant_id"],
         )
     ) as client:
-        r = await client.get("/cities/1/districts?city_id=1&city_id=2")
+        r = await client.get("/cities/1/districts?tenant_id=1&tenant_id=2")
         assert r.status_code == 200
         data = r.json()["data"]
         labels = {item["label"] for item in data}
