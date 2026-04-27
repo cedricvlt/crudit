@@ -129,9 +129,7 @@ list_endpoint(
 
         # --- auth ---
         login_required=True,
-        login_dep=get_current_user,            # FastAPI dependency → current_user
         permissions=["erp:district:view"],
-        permission_dep=make_permission_dep,
 
         # --- filtering ---
         filterable_fields=["name", "is_active", "city.name"],
@@ -145,8 +143,10 @@ list_endpoint(
 
         # --- fastapi ---
         tags=["Districts"],
-        summary="List districts for a city",
     ),
+    login_dep=get_current_user,            # FastAPI dependency → current_user
+    permission_dep=make_permission_dep,
+    summary="List districts for a city",
     get_db=get_db,
 )
 
@@ -157,12 +157,12 @@ read_endpoint(
     schema=DistrictSchema,
     config=ReadConfig(
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:view"],
-        permission_dep=make_permission_dep,
         tags=["Districts"],
-        summary="Get a district by ID",
     ),
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    summary="Get a district by ID",
     get_db=get_db,
 )
 
@@ -177,12 +177,12 @@ create_endpoint(
             ParentParam(url_param="city_id", model=City, child_field="city_id"),
         ],
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_dep=make_permission_dep,
         tags=["Districts"],
-        summary="Create a district in a city",
     ),
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    summary="Create a district in a city",
     get_db=get_db,
 )
 
@@ -194,12 +194,12 @@ update_endpoint(
     read_schema=DistrictSchema,           # response schema (with joins)
     config=UpdateConfig(
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_dep=make_permission_dep,
         tags=["Districts"],
-        summary="Partially update a district",
     ),
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    summary="Partially update a district",
     get_db=get_db,
 )
 
@@ -209,12 +209,12 @@ delete_endpoint(
     model=District,
     config=DeleteConfig(
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:delete"],
-        permission_dep=make_permission_dep,
         tags=["Districts"],
-        summary="Delete a district",
     ),
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    summary="Delete a district",
     get_db=get_db,
 )
 
@@ -225,12 +225,12 @@ reorder_endpoint(
     config=ReorderConfig(
         path_filters={"city_id": "city_id"},
         login_required=True,
-        login_dep=get_current_user,
         permissions=["erp:district:edit"],
-        permission_dep=make_permission_dep,
         tags=["Districts"],
-        summary="Reorder districts within a city",
     ),
+    login_dep=get_current_user,
+    permission_dep=make_permission_dep,
+    summary="Reorder districts within a city",
     get_db=get_db,
 )
 ```
@@ -832,9 +832,11 @@ def make_permission_dep(perms: list[str]):
             raise HTTPException(status_code=403)
     return Depends(check)
 
-config = ListConfig(
-    permissions=["erp:district:view"],
+list_endpoint(
+    ...,
+    config=ListConfig(permissions=["erp:district:view"]),
     permission_dep=make_permission_dep,
+    ...,
 )
 ```
 
@@ -955,9 +957,7 @@ class OptionsConfig:
 
     # Auth
     login_required: bool             # default True — 401 if no user
-    login_dep: Callable | None       # FastAPI dependency returning current_user
     permissions: list[str]           # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Filtering
     filterable_fields: list[str]     # plain or "rel.field"
@@ -978,7 +978,6 @@ class OptionsConfig:
     # FastAPI
     dependencies: list[Any]          # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 At most one of `label_field` or `label_fn` may be set. When neither is provided, `label_field` defaults to `"name"`. Setting both raises a `CruditConfigError` at registration time.
@@ -994,6 +993,9 @@ def options_endpoint(
     model: type[DeclarativeBase],
     config: OptionsConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     schema: type[BaseModel] | None = None,  # for join resolution only
     get_db: Callable,                        # FastAPI dependency returning AsyncSession
 ) -> None:
@@ -1021,6 +1023,7 @@ options_endpoint(
         search_fields=["name"],
         filterable_fields=["is_active"],
     ),
+    login_dep=get_current_user,
     schema=DistrictSchema,  # needed when label_fn uses row.city
     get_db=get_db,
 )
@@ -1043,9 +1046,7 @@ class ListConfig:
 
     # Auth
     login_required: bool                # default True — 401 if no user
-    login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Filtering
     filterable_fields: list[str]        # plain or "rel.field"
@@ -1066,7 +1067,6 @@ class ListConfig:
     # FastAPI
     dependencies: list[Any]             # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ---
@@ -1078,9 +1078,7 @@ class ListConfig:
 class ReadConfig:
     # Auth
     login_required: bool                # default True — 401 if no user
-    login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_query: HookFn | None         # (query, request, current_user) -> query
@@ -1089,7 +1087,6 @@ class ReadConfig:
     # FastAPI
     dependencies: list[Any]             # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ---
@@ -1107,9 +1104,7 @@ class CreateConfig:
 
     # Auth
     login_required: bool                 # default True — 401 if no user
-    login_dep: Callable | None           # FastAPI dependency returning current_user
     permissions: list[str]               # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_create: CreateHookFn | None   # (obj, request, current_user) -> obj
@@ -1118,7 +1113,6 @@ class CreateConfig:
     # FastAPI
     dependencies: list[Any]              # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ```python
@@ -1141,6 +1135,9 @@ def list_endpoint(
     schema: type[BaseModel],
     config: ListConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
@@ -1157,6 +1154,9 @@ def read_endpoint(
     schema: type[BaseModel],
     config: ReadConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
@@ -1176,6 +1176,9 @@ def create_endpoint(
     read_schema: type[BaseModel],    # response schema (may include joined relations)
     config: CreateConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,                # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
@@ -1194,9 +1197,7 @@ class UpdateConfig:
 
     # Auth
     login_required: bool                      # default True — 401 if no user
-    login_dep: Callable | None                # FastAPI dependency returning current_user
     permissions: list[str]                    # required permission strings
-    permission_dep: PermissionDepFn | None     # (list[str]) -> Depends
 
     # Hooks
     before_update: UpdateBeforeHookFn | None  # (obj, patch_data, request, current_user) -> patch_data
@@ -1205,7 +1206,6 @@ class UpdateConfig:
     # FastAPI
     dependencies: list[Any]                   # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ---
@@ -1221,6 +1221,9 @@ def update_endpoint(
     read_schema: type[BaseModel],    # response schema (may include joined relations)
     config: UpdateConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,                # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
@@ -1236,9 +1239,7 @@ The path must contain `{id}`. The primary key column is auto-detected from the S
 class DeleteConfig:
     # Auth
     login_required: bool                # default True — 401 if no user
-    login_dep: Callable | None          # FastAPI dependency returning current_user
     permissions: list[str]              # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_delete: DeleteHookFn | None  # (obj, request, current_user) -> None — raise to abort
@@ -1247,7 +1248,6 @@ class DeleteConfig:
     # FastAPI
     dependencies: list[Any]             # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ---
@@ -1261,6 +1261,9 @@ def delete_endpoint(
     model: type[DeclarativeBase],
     config: DeleteConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,           # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
@@ -1279,9 +1282,7 @@ class ReorderConfig:
 
     # Auth
     login_required: bool                 # default True — 401 if no user
-    login_dep: Callable | None           # FastAPI dependency returning current_user
     permissions: list[str]               # required permission strings
-    permission_dep: PermissionDepFn | None  # (list[str]) -> Depends
 
     # Hooks
     before_reorder: ReorderHookFn | None  # (objects, request, current_user) -> None — raise to abort
@@ -1290,7 +1291,6 @@ class ReorderConfig:
     # FastAPI
     dependencies: list[Any]              # extra Depends() to attach to the route
     tags: list[str]
-    summary: str | None
 ```
 
 ---
@@ -1304,6 +1304,9 @@ def reorder_endpoint(
     model: type[DeclarativeBase],  # must have a sort_order column
     config: ReorderConfig,
     *,
+    login_dep: Callable | None = None,       # FastAPI dependency returning current_user
+    permission_dep: PermissionDepFn | None = None,  # (list[str]) -> Depends
+    summary: str | None = None,
     get_db: Callable,              # FastAPI dependency returning AsyncSession
 ) -> None:
 ```

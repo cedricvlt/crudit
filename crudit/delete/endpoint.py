@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.delete.config import DeleteConfig
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
+from crudit.types import PermissionDepFn
 from crudit.signature import patch_param_annotation
 from crudit.utils import call_hook, get_error_responses
 
@@ -20,6 +21,9 @@ def delete_endpoint(
     model: type[DeclarativeBase],
     config: DeleteConfig,
     *,
+    login_dep: Callable | None = None,
+    permission_dep: PermissionDepFn | None = None,
+    summary: str | None = None,
     get_db: Callable,
 ) -> None:
     """
@@ -36,7 +40,7 @@ def delete_endpoint(
     _pk_field = pk_field
 
     db_dep = Depends(get_db)
-    user_dep = Depends(_config.login_dep) if _config.login_dep else None
+    user_dep = Depends(login_dep) if login_dep else None
 
     async def _handler(
         request: Request,
@@ -86,8 +90,8 @@ def delete_endpoint(
 
     model_name = model.__name__
     deps = list(_config.dependencies)
-    if _config.permission_dep is not None and _config.permissions:
-        deps.append(_config.permission_dep(_config.permissions))
+    if permission_dep is not None and _config.permissions:
+        deps.append(permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
@@ -95,7 +99,7 @@ def delete_endpoint(
         status_code=204,
         response_class=Response,
         tags=_config.tags or None,
-        summary=_config.summary or f"Delete a {model_name} row from the database.",
+        summary=summary or f"Delete a {model_name} row from the database.",
         dependencies=deps,
         responses=get_error_responses(400, 403, 404),
     )

@@ -89,9 +89,8 @@ async def test_update_permission_dep_denied_returns_403(seed, make_update_client
     config = UpdateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=deny_dep,
     )
-    async with await make_update_client(config, current_user=user) as client:
+    async with await make_update_client(config, current_user=user, permission_dep=deny_dep) as client:
         r = await client.patch("/districts/1", json={"name": "Denied"})
     assert r.status_code == 403
 
@@ -110,9 +109,8 @@ async def test_update_permission_dep_allowed_returns_200(seed, make_update_clien
     config = UpdateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=allow_dep,
     )
-    async with await make_update_client(config, current_user=user) as client:
+    async with await make_update_client(config, current_user=user, permission_dep=allow_dep) as client:
         r = await client.patch("/districts/1", json={"name": "Allowed"})
     assert r.status_code == 200
 

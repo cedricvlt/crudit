@@ -69,9 +69,8 @@ async def test_delete_permission_dep_denied_returns_403(seed, make_delete_client
     config = DeleteConfig(
         login_required=True,
         permissions=["core:district:delete"],
-        permission_dep=deny_dep,
     )
-    async with await make_delete_client(config, current_user=user) as client:
+    async with await make_delete_client(config, current_user=user, permission_dep=deny_dep) as client:
         r = await client.delete("/districts/1")
     assert r.status_code == 403
 
@@ -90,9 +89,8 @@ async def test_delete_permission_dep_allowed_returns_204(delete_target, make_del
     config = DeleteConfig(
         login_required=True,
         permissions=["core:district:delete"],
-        permission_dep=allow_dep,
     )
-    async with await make_delete_client(config, current_user=user) as client:
+    async with await make_delete_client(config, current_user=user, permission_dep=allow_dep) as client:
         r = await client.delete("/districts/100")
     assert r.status_code == 204
     assert not await district_exists(engine, 100)

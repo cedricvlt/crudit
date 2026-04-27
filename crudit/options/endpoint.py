@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from crudit.exceptions import CruditConfigError
 from crudit.joins import JoinInfo, collect_needed_joins, resolve_joins
+from crudit.types import PermissionDepFn
 from crudit.list.filters import (
     _RESERVED_PARAMS,
     apply_default_filters,
@@ -32,6 +33,9 @@ def options_endpoint(
     model: type[DeclarativeBase],
     config: OptionsConfig,
     *,
+    login_dep: Callable | None = None,
+    permission_dep: PermissionDepFn | None = None,
+    summary: str | None = None,
     schema: type[BaseModel] | None = None,
     get_db: Callable,
 ) -> None:
@@ -59,7 +63,7 @@ def options_endpoint(
     _join_info = join_info
 
     db_dep = Depends(get_db)
-    user_dep = Depends(_config.login_dep) if _config.login_dep else None
+    user_dep = Depends(login_dep) if login_dep else None
 
     async def _handler(
         request: Request,
@@ -158,15 +162,15 @@ def options_endpoint(
 
     model_name = model.__name__
     deps = list(_config.dependencies)
-    if _config.permission_dep is not None and _config.permissions:
-        deps.append(_config.permission_dep(_config.permissions))
+    if permission_dep is not None and _config.permissions:
+        deps.append(permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
         methods=["GET"],
         response_model=PaginatedResponse[OptionItem],
         tags=_config.tags or None,
-        summary=_config.summary or f"List {model_name} option items for selection.",
+        summary=summary or f"List {model_name} option items for selection.",
         dependencies=deps,
         responses=get_error_responses(403),
     )

@@ -12,6 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.create.config import CreateConfig
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
+from crudit.types import PermissionDepFn
 from crudit.read.endpoint import _detect_pk_field
 from crudit.signature import patch_param_annotation
 from crudit.utils import call_hook, get_error_responses
@@ -25,6 +26,9 @@ def create_endpoint(
     read_schema: type[BaseModel],
     config: CreateConfig,
     *,
+    login_dep: Callable | None = None,
+    permission_dep: PermissionDepFn | None = None,
+    summary: str | None = None,
     get_db: Callable,
 ) -> None:
     """
@@ -44,7 +48,7 @@ def create_endpoint(
     _pk_field = pk_field
 
     db_dep = Depends(get_db)
-    user_dep = Depends(_config.login_dep) if _config.login_dep else None
+    user_dep = Depends(login_dep) if login_dep else None
 
     async def _handler(
         request: Request,
@@ -136,8 +140,8 @@ def create_endpoint(
 
     model_name = model.__name__
     deps = list(_config.dependencies)
-    if _config.permission_dep is not None and _config.permissions:
-        deps.append(_config.permission_dep(_config.permissions))
+    if permission_dep is not None and _config.permissions:
+        deps.append(permission_dep(_config.permissions))
     router.add_api_route(
         path,
         _handler,
@@ -145,7 +149,7 @@ def create_endpoint(
         response_model=_read_schema,
         status_code=201,
         tags=_config.tags or None,
-        summary=_config.summary or f"Create a new {model_name} row in the database.",
+        summary=summary or f"Create a new {model_name} row in the database.",
         dependencies=deps,
         responses=get_error_responses(400, 403, 404),
     )

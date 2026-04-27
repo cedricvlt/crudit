@@ -71,9 +71,8 @@ async def test_read_permission_dep_denied_returns_403(seed, make_read_client):
     config = ReadConfig(
         login_required=True,
         permissions=["core:district:view"],
-        permission_dep=deny_dep,
     )
-    async with await make_read_client(config, current_user=user) as client:
+    async with await make_read_client(config, current_user=user, permission_dep=deny_dep) as client:
         r = await client.get("/districts/1")
         assert r.status_code == 403
 
@@ -93,9 +92,8 @@ async def test_read_permission_dep_allowed_returns_200(seed, make_read_client):
     config = ReadConfig(
         login_required=True,
         permissions=["core:district:view"],
-        permission_dep=allow_dep,
     )
-    async with await make_read_client(config, current_user=user) as client:
+    async with await make_read_client(config, current_user=user, permission_dep=allow_dep) as client:
         r = await client.get("/districts/1")
         assert r.status_code == 200
 

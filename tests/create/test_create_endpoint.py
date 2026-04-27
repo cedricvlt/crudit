@@ -113,10 +113,9 @@ async def test_create_permission_dep_denied_returns_403(seed, make_create_client
     config = CreateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=deny_dep,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
     )
-    async with await make_create_client(config, current_user=user) as client:
+    async with await make_create_client(config, current_user=user, permission_dep=deny_dep) as client:
         r = await client.post("/cities/1/districts", json={"name": "Denied"})
     assert r.status_code == 403
 
@@ -135,10 +134,9 @@ async def test_create_permission_dep_allowed_returns_201(seed, make_create_clien
     config = CreateConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=allow_dep,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
     )
-    async with await make_create_client(config, current_user=user) as client:
+    async with await make_create_client(config, current_user=user, permission_dep=allow_dep) as client:
         r = await client.post("/cities/1/districts", json={"name": "Allowed"})
     assert r.status_code == 201
     cleanup_districts.append(r.json()["id"])
@@ -347,7 +345,6 @@ async def test_create_without_parent_flat(seed, cleanup_districts, engine):
         return None
 
     cfg = CreateConfig(login_required=False)
-    cfg.login_dep = get_user
 
     create_endpoint(
         router=app.router,
@@ -356,6 +353,7 @@ async def test_create_without_parent_flat(seed, cleanup_districts, engine):
         create_schema=DistrictCreateFlatSchema,
         read_schema=DistrictSchema,
         config=cfg,
+        login_dep=get_user,
         get_db=get_db,
     )
 

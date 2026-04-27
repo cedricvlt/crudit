@@ -18,6 +18,7 @@ def make_reorder_app(
     config: ReorderConfig,
     path: str = "/districts/reorder",
     current_user: Any = None,
+    permission_dep: Any = None,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -29,13 +30,13 @@ def make_reorder_app(
     async def get_current_user() -> Any:
         return current_user
 
-    config.login_dep = get_current_user
-
     reorder_endpoint(
         router=app.router,
         path=path,
         model=District,
         config=config,
+        login_dep=get_current_user,
+        permission_dep=permission_dep,
         get_db=get_db,
     )
     return app
@@ -47,8 +48,9 @@ def make_reorder_client(engine):
         config: ReorderConfig,
         path: str = "/districts/reorder",
         current_user: Any = None,
+        permission_dep: Any = None,
     ) -> AsyncClient:
-        app = make_reorder_app(engine, config, path, current_user)
+        app = make_reorder_app(engine, config, path, current_user, permission_dep)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make

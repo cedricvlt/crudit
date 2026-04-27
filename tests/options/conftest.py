@@ -18,6 +18,7 @@ def make_app(
     config: OptionsConfig,
     current_user: Any = None,
     schema: type[BaseModel] | None = None,
+    permission_dep: Any = None,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -29,13 +30,13 @@ def make_app(
     async def get_current_user() -> Any:
         return current_user
 
-    config.login_dep = get_current_user
-
     options_endpoint(
         router=app.router,
         path="/cities/{city_id}/districts",
         model=District,
         config=config,
+        login_dep=get_current_user,
+        permission_dep=permission_dep,
         schema=schema or DistrictSchema,
         get_db=get_db,
     )
@@ -48,8 +49,9 @@ def make_client(engine):
         config: OptionsConfig,
         current_user: Any = None,
         schema: type[BaseModel] | None = None,
+        permission_dep: Any = None,
     ) -> AsyncClient:
-        app = make_app(engine, config, current_user, schema)
+        app = make_app(engine, config, current_user, schema, permission_dep)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make_client

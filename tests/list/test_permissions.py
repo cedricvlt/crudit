@@ -90,9 +90,9 @@ async def test_permission_dep_forbidden(seed, make_client):
             path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
-            permission_dep=deny_dep,
         ),
         current_user=user,
+        permission_dep=deny_dep,
     ) as client:
         r = await client.get("/cities/1/districts")
         assert r.status_code == 403
@@ -115,9 +115,9 @@ async def test_permission_dep_allowed(seed, make_client):
             path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
-            permission_dep=allow_dep,
         ),
         current_user=user,
+        permission_dep=allow_dep,
     ) as client:
         r = await client.get("/cities/1/districts")
         assert r.status_code == 200

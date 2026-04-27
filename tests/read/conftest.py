@@ -12,7 +12,7 @@ from crudit import ReadConfig, read_endpoint
 from tests.conftest import District, DistrictSchema
 
 
-def make_read_app(engine, config: ReadConfig, current_user: Any = None) -> FastAPI:
+def make_read_app(engine, config: ReadConfig, current_user: Any = None, permission_dep: Any = None) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -23,14 +23,14 @@ def make_read_app(engine, config: ReadConfig, current_user: Any = None) -> FastA
     async def get_current_user() -> Any:
         return current_user
 
-    config.login_dep = get_current_user
-
     read_endpoint(
         router=app.router,
         path="/districts/{id}",
         model=District,
         schema=DistrictSchema,
         config=config,
+        login_dep=get_current_user,
+        permission_dep=permission_dep,
         get_db=get_db,
     )
     return app
@@ -38,7 +38,7 @@ def make_read_app(engine, config: ReadConfig, current_user: Any = None) -> FastA
 
 @pytest_asyncio.fixture
 def make_read_client(engine):
-    async def _make_read_client(config: ReadConfig, current_user: Any = None) -> AsyncClient:
-        app = make_read_app(engine, config, current_user)
+    async def _make_read_client(config: ReadConfig, current_user: Any = None, permission_dep: Any = None) -> AsyncClient:
+        app = make_read_app(engine, config, current_user, permission_dep)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
     return _make_read_client

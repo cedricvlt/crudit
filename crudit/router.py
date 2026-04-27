@@ -41,18 +41,14 @@ def _from_shared(
     config_cls: type,
     shared: SharedConfig | None,
     *,
-    login_dep: Callable | None,
-    permission_dep: PermissionDepFn | None,
     tags: list[str],
     **extra: Any,
 ) -> Any:
     if shared is None:
-        return config_cls(login_dep=login_dep, permission_dep=permission_dep, tags=tags, **extra)
+        return config_cls(tags=tags, **extra)
     return config_cls(
         permissions=shared.permissions,
         login_required=shared.login_required,
-        login_dep=login_dep,
-        permission_dep=permission_dep,
         dependencies=shared.dependencies,
         tags=tags,
         **extra,
@@ -129,36 +125,37 @@ def crud_router(
             raise CruditConfigError("read_schema is required when 'update' is in crud_endpoints.")
 
     _tags = tags or []
-    _shared_kwargs = dict(login_dep=login_dep, permission_dep=permission_dep, tags=_tags)
+    _shared_kwargs = dict(tags=_tags)
+    _endpoint_kwargs = dict(login_dep=login_dep, permission_dep=permission_dep, get_db=get_db)
 
     router = APIRouter()
 
     if "list" in active:
         list_cfg = list or _from_shared(ListConfig, shared, **_shared_kwargs)
-        list_endpoint(router, "", model, list_item_schema, list_cfg, get_db=get_db)
+        list_endpoint(router, "", model, list_item_schema, list_cfg, **_endpoint_kwargs)
 
     if "create" in active:
         create_cfg = create or _from_shared(CreateConfig, shared, **_shared_kwargs)
-        create_endpoint(router, "", model, create_schema, read_schema, create_cfg, get_db=get_db)
+        create_endpoint(router, "", model, create_schema, read_schema, create_cfg, **_endpoint_kwargs)
 
     if "read" in active:
         read_cfg = read or _from_shared(ReadConfig, shared, **_shared_kwargs)
-        read_endpoint(router, "/{id}", model, read_schema, read_cfg, get_db=get_db)
+        read_endpoint(router, "/{id}", model, read_schema, read_cfg, **_endpoint_kwargs)
 
     if "update" in active:
         update_cfg = update or _from_shared(UpdateConfig, shared, **_shared_kwargs)
-        update_endpoint(router, "/{id}", model, update_schema, read_schema, update_cfg, get_db=get_db)
+        update_endpoint(router, "/{id}", model, update_schema, read_schema, update_cfg, **_endpoint_kwargs)
 
     if "delete" in active:
         delete_cfg = delete or _from_shared(DeleteConfig, shared, **_shared_kwargs)
-        delete_endpoint(router, "/{id}", model, delete_cfg, get_db=get_db)
+        delete_endpoint(router, "/{id}", model, delete_cfg, **_endpoint_kwargs)
 
     if "options" in active:
         options_cfg = options or _from_shared(OptionsConfig, shared, **_shared_kwargs)
-        options_endpoint(router, "/options", model, options_cfg, schema=list_item_schema, get_db=get_db)
+        options_endpoint(router, "/options", model, options_cfg, schema=list_item_schema, **_endpoint_kwargs)
 
     if "reorder" in active:
         reorder_cfg = reorder or _from_shared(ReorderConfig, shared, **_shared_kwargs)
-        reorder_endpoint(router, "/reorder", model, reorder_cfg, get_db=get_db)
+        reorder_endpoint(router, "/reorder", model, reorder_cfg, **_endpoint_kwargs)
 
     return router

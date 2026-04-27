@@ -13,7 +13,7 @@ from crudit import DeleteConfig, delete_endpoint
 from tests.conftest import District, User
 
 
-def make_delete_app(engine, config: DeleteConfig, current_user: Any = None) -> FastAPI:
+def make_delete_app(engine, config: DeleteConfig, current_user: Any = None, permission_dep: Any = None) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -24,13 +24,13 @@ def make_delete_app(engine, config: DeleteConfig, current_user: Any = None) -> F
     async def get_current_user() -> Any:
         return current_user
 
-    config.login_dep = get_current_user
-
     delete_endpoint(
         router=app.router,
         path="/districts/{id}",
         model=District,
         config=config,
+        login_dep=get_current_user,
+        permission_dep=permission_dep,
         get_db=get_db,
     )
     return app
@@ -38,8 +38,8 @@ def make_delete_app(engine, config: DeleteConfig, current_user: Any = None) -> F
 
 @pytest_asyncio.fixture
 def make_delete_client(engine):
-    async def _make(config: DeleteConfig, current_user: Any = None) -> AsyncClient:
-        app = make_delete_app(engine, config, current_user)
+    async def _make(config: DeleteConfig, current_user: Any = None, permission_dep: Any = None) -> AsyncClient:
+        app = make_delete_app(engine, config, current_user, permission_dep)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make

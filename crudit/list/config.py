@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from crudit.types import AfterFn, FilterFn, HookFn, PermissionDepFn, SearchFn
+from crudit.types import AfterFn, FilterFn, HookFn, SearchFn
 
 
 @dataclass
@@ -14,8 +14,6 @@ class ListConfig:
     # Permissions
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True
-    login_dep: Callable | None = None
-    permission_dep: PermissionDepFn | None = None
 
     # Filters — plain field names or "relationship.field" notation
     filterable_fields: list[str] = field(default_factory=list)
@@ -38,4 +36,3 @@ class ListConfig:
     # FastAPI
     dependencies: list[Any] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
-    summary: str | None = None

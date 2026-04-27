@@ -115,9 +115,8 @@ async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_clie
     config = ReorderConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=deny_dep,
     )
-    async with await make_reorder_client(config, current_user=user) as client:
+    async with await make_reorder_client(config, current_user=user, permission_dep=deny_dep) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 2]})
     assert r.status_code == 403
 
@@ -136,9 +135,8 @@ async def test_reorder_permission_dep_allowed_returns_204(seed, make_reorder_cli
     config = ReorderConfig(
         login_required=True,
         permissions=["core:district:edit"],
-        permission_dep=allow_dep,
     )
-    async with await make_reorder_client(config, current_user=user) as client:
+    async with await make_reorder_client(config, current_user=user, permission_dep=allow_dep) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 2]})
     assert r.status_code == 204
 

@@ -49,9 +49,9 @@ async def test_permission_dep_deny(seed, make_client):
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
-            permission_dep=deny_dep,
         ),
         current_user=User(id=1, name="Alice", tenant_id=1),
+        permission_dep=deny_dep,
     ) as client:
         r = await client.get("/cities/1/districts")
         assert r.status_code == 403
@@ -73,9 +73,9 @@ async def test_permission_dep_allow(seed, make_client):
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
-            permission_dep=allow_dep,
         ),
         current_user=User(id=1, name="Alice", tenant_id=1),
+        permission_dep=allow_dep,
     ) as client:
         r = await client.get("/cities/1/districts")
         assert r.status_code == 200
