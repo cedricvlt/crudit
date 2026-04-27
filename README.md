@@ -962,7 +962,7 @@ class OptionsConfig:
     sortable_fields: list[str]       # plain or "rel.field"
 
     # Search
-    search_fields: list[str]         # fields for ?q= ILIKE search
+    search_fields: list[str]         # fields for ?q= ILIKE search; supports "rel.field" dot-notation
     search_fn: SearchFn | None       # custom search fn (overrides search_fields)
 
     # Hooks
@@ -1051,7 +1051,7 @@ class ListConfig:
     sortable_fields: list[str]          # plain or "rel.field"
 
     # Search
-    search_fields: list[str]            # fields for ?q= ILIKE search
+    search_fields: list[str]            # fields for ?q= ILIKE search; supports "rel.field" dot-notation
     search_fn: SearchFn | None          # custom search fn (overrides search_fields)
 
     # Hooks

@@ -79,6 +79,13 @@ def list_endpoint(
             current_user,
             _config.login_required,
         )
+        explicitly_joined: set[str] = collect_needed_joins(
+            filter_params, sort, _join_info, _config.search_fields
+        )
+        for rel_name in explicitly_joined:
+            rel_attr = getattr(_model, rel_name)
+            query = query.join(rel_attr, isouter=True)
+
         query = apply_search(
             query,
             q,
@@ -88,13 +95,6 @@ def list_endpoint(
             _config.search_fn,
             current_user,
         )
-
-        explicitly_joined: set[str] = collect_needed_joins(
-            filter_params, sort, _join_info
-        )
-        for rel_name in explicitly_joined:
-            rel_attr = getattr(_model, rel_name)
-            query = query.join(rel_attr, isouter=True)
 
         query = apply_filters(
             query,

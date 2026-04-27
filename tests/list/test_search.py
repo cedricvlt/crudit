@@ -35,6 +35,21 @@ async def test_search_no_match(seed, make_client):
 
 
 @pytest.mark.asyncio
+async def test_search_nested_field(seed, make_client):
+    async with await make_client(
+        ListConfig(
+            search_fields=["city.name"],
+            login_required=False,
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?q=Par")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert len(data) == 2
+        assert all(d["city"]["name"] == "Paris" for d in data)
+
+
+@pytest.mark.asyncio
 async def test_custom_search_fn(seed, make_client):
     from sqlalchemy.sql import Select
 

@@ -76,6 +76,7 @@ def collect_needed_joins(
     filter_params: dict[str, list[str]],
     sort_param: str | None,
     join_info: JoinInfo,
+    search_fields: list[str] | None = None,
 ) -> set[str]:
     """
     Scan filter keys and sort param to find which m2o relationships need an
@@ -97,6 +98,13 @@ def collect_needed_joins(
     if sort_param:
         for part in sort_param.split(","):
             field_path = part.strip().lstrip("-")
+            if "." in field_path:
+                rel_name = field_path.split(".")[0]
+                if rel_name in join_info.m2o_rels:
+                    needed.add(rel_name)
+
+    if search_fields:
+        for field_path in search_fields:
             if "." in field_path:
                 rel_name = field_path.split(".")[0]
                 if rel_name in join_info.m2o_rels:
