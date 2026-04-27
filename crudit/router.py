@@ -139,6 +139,15 @@ def crud_router(
         create_cfg = create or _from_shared(CreateConfig, shared, **_shared_kwargs)
         create_endpoint(router, "", model, create_schema, read_schema, create_cfg, **_endpoint_kwargs)
 
+    if "options" in active:
+        options_cfg = options or _from_shared(OptionsConfig, shared, **_shared_kwargs)
+        _opt_schema_kwargs = {"schema": option_schema} if option_schema is not None else {}
+        options_endpoint(router, "/options", model, options_cfg, **_opt_schema_kwargs, **_endpoint_kwargs)
+
+    if "reorder" in active:
+        reorder_cfg = reorder or _from_shared(ReorderConfig, shared, **_shared_kwargs)
+        reorder_endpoint(router, "/reorder", model, reorder_cfg, **_endpoint_kwargs)
+
     if "read" in active:
         read_cfg = read or _from_shared(ReadConfig, shared, **_shared_kwargs)
         read_endpoint(router, "/{id}", model, read_schema, read_cfg, **_endpoint_kwargs)
@@ -150,14 +159,5 @@ def crud_router(
     if "delete" in active:
         delete_cfg = delete or _from_shared(DeleteConfig, shared, **_shared_kwargs)
         delete_endpoint(router, "/{id}", model, delete_cfg, **_endpoint_kwargs)
-
-    if "options" in active:
-        options_cfg = options or _from_shared(OptionsConfig, shared, **_shared_kwargs)
-        _opt_schema_kwargs = {"schema": option_schema} if option_schema is not None else {}
-        options_endpoint(router, "/options", model, options_cfg, **_opt_schema_kwargs, **_endpoint_kwargs)
-
-    if "reorder" in active:
-        reorder_cfg = reorder or _from_shared(ReorderConfig, shared, **_shared_kwargs)
-        reorder_endpoint(router, "/reorder", model, reorder_cfg, **_endpoint_kwargs)
 
     return router
