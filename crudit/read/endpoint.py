@@ -33,6 +33,7 @@ def read_endpoint(
     """
     join_info = resolve_joins(model, schema)
     pk_field = _detect_pk_field(model)
+    _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
     load_allowed_users = (
         has_allowed_users_relationship(model)
         and "allowed_users" not in join_info.joined_models
@@ -52,10 +53,7 @@ def read_endpoint(
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Any:
-        pk_value = request.path_params.get("id")
-        if pk_value is None:
-            raise HTTPException(status_code=400, detail="Missing path param 'id'.")
-
+        pk_value = _pk_python_type(request.path_params["id"])
         pk_col = getattr(_model, _pk_field)
         query = select(_model).where(pk_col == pk_value)
 
