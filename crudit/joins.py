@@ -134,17 +134,30 @@ def resolve_nested_column(
 
 
 def _extract_nested_model(annotation: Any) -> tuple[type[BaseModel] | None, bool]:
+    import types as _types
+    from typing import Union
+
     if annotation is None:
         return None, False
 
     origin = get_origin(annotation)
 
+    # list[BaseModel] -> o2m (selectinload)
     if origin is list:
         args = get_args(annotation)
         if args and inspect.isclass(args[0]) and issubclass(args[0], BaseModel):
             return args[0], True
         return None, False
 
+    # BaseModel | None or Optional[BaseModel] -> m2o/o2o (joinedload)
+    if origin is Union or (hasattr(_types, "UnionType") and isinstance(annotation, _types.UnionType)):
+        args = get_args(annotation)
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1 and inspect.isclass(non_none[0]) and issubclass(non_none[0], BaseModel):
+            return non_none[0], False
+        return None, False
+
+    # bare BaseModel -> m2o/o2o (joinedload)
     if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
         return annotation, False
 
