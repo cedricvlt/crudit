@@ -135,6 +135,8 @@ def list_endpoint(
         result = await db.execute(query)
         rows = list(result.scalars().unique())
 
+        _join_info.sort_o2m_collections(rows)
+
         if _config.after_query is not None:
             rows = await call_hook(_config.after_query, rows, request, current_user)
 

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import pytest
-from pydantic import BaseModel
+from collections.abc import AsyncGenerator
+from typing import Any
 
+import pytest
+import pytest_asyncio
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from crudit import ListConfig, list_endpoint
 from crudit.exceptions import CruditConfigError
 from crudit.joins import resolve_joins
-from tests.conftest import District
+from tests.conftest import City, District
 
 
 class CitySchema(BaseModel):
@@ -50,6 +58,55 @@ def test_unknown_relationship_raises():
 
     with pytest.raises(CruditConfigError, match="nonexistent"):
         resolve_joins(District, BadSchema)
+
+
+class DistrictSimpleSchema(BaseModel):
+    id: int
+    name: str
+
+
+class CityWithDistrictsSchema(BaseModel):
+    id: int
+    name: str
+    districts: list[DistrictSimpleSchema]
+
+
+@pytest_asyncio.fixture
+def make_city_client(engine):
+    def _make(config: ListConfig, current_user: Any = None):
+        app = FastAPI()
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def get_db() -> AsyncGenerator[AsyncSession, None]:
+            async with session_factory() as session:
+                yield session
+
+        async def get_current_user() -> Any:
+            return current_user
+
+        list_endpoint(
+            router=app.router,
+            path="/cities",
+            model=City,
+            schema=CityWithDistrictsSchema,
+            config=config,
+            login_dep=get_current_user,
+            get_db=get_db,
+        )
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    return _make
+
+
+@pytest.mark.asyncio
+async def test_o2m_joined_items_sorted_by_order_fields(seed, make_city_client):
+    async with make_city_client(ListConfig(login_required=False)) as client:
+        r = await client.get("/cities")
+        assert r.status_code == 200
+        cities = r.json()["data"]
+        paris = next(c for c in cities if c["name"] == "Paris")
+        district_names = [d["name"] for d in paris["districts"]]
+        assert district_names == sorted(district_names)
 
 
 @pytest.mark.asyncio

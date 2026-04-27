@@ -21,6 +21,21 @@ class JoinInfo:
     # o2m: loaded via selectin, cannot be joined for filter/sort
     o2m_rels: set[str] = field(default_factory=set)
 
+    def sort_o2m_collections(self, rows: list) -> None:
+        """
+        Sort each o2m collection on loaded ORM rows by the related model's
+        _order_fields (if defined). Mutates rows in-place.
+        """
+        for rel_name in self.o2m_rels:
+            rel_model = self.joined_models[rel_name]
+            order_fields: tuple[str, ...] = getattr(rel_model, "_order_fields", ())
+            if not order_fields:
+                continue
+            for row in rows:
+                collection = getattr(row, rel_name, None)
+                if collection is not None:
+                    collection.sort(key=lambda obj: tuple(getattr(obj, f, None) for f in order_fields))
+
     def eager_load_options(self, model: type, explicitly_joined: set[str]) -> list[_AbstractLoad]:
         """
         Build eager-load options given which relationships were explicitly joined
