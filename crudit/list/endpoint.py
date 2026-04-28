@@ -150,7 +150,7 @@ def list_endpoint(
             items_per_page=pagination.items_per_page,
         )
 
-    inject_query_params(_handler, _config.filterable_fields)
+    inject_query_params(_handler, _config.filterable_fields, _model, _join_info.joined_models)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

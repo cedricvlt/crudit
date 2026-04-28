@@ -1,23 +1,101 @@
 from __future__ import annotations
 
 import inspect
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import Query
 
 
-def inject_query_params(handler: Any, filterable_fields: list[str]) -> None:
+def _get_python_type(col: Any) -> type:
+    """Get the Python type of a SQLAlchemy column attribute, defaulting to str."""
+    try:
+        return col.property.columns[0].type.impl_instance.python_type
+    except Exception:
+        try:
+            return col.property.columns[0].type.python_type
+        except Exception:
+            return str
+
+
+def _make_filter_params(
+    field: str,
+    model: Any,
+    joined_models: dict[str, type],
+) -> list[inspect.Parameter]:
     """
-    Extend handler.__signature__ with explicit query params for each filterable field.
+    Build typed inspect.Parameters for a filterable field and all its operators.
 
-    Simple field names (e.g. "name") become `name: list[str] | None = None`.
-    Dotted field names (e.g. "city.name") become `city__name: list[str] | None = None`
-    with a Query(alias="city.name") so the actual query param name stays dotted.
-    Using list[str] allows FastAPI to accept multiple values for the same param,
-    which are then combined with OR in apply_filters.
+    The base param uses list[<col_type>] | None (for multi-value OR equality).
+    Operator-suffixed params (e.g. name__ilike, age__gte) are added for each
+    operator that makes sense for the column type.
+    """
+    from crudit.joins import resolve_nested_column
 
-    The handler must declare **_filter_kwargs to absorb the injected values at
-    call time (we still read filters from request.query_params to support operators).
+    try:
+        col = resolve_nested_column(field, model, joined_models)
+        python_type = _get_python_type(col)
+    except Exception:
+        python_type = str
+
+    has_dot = "." in field
+    base_name = field.replace(".", "__") if has_dot else field
+
+    def _param(suffix: str, annotation: Any) -> inspect.Parameter:
+        param_name = f"{base_name}__{suffix}" if suffix else base_name
+        if has_dot:
+            alias = f"{field}__{suffix}" if suffix else field
+            q = Query(alias=alias)
+        else:
+            q = Query()
+        return inspect.Parameter(
+            name=param_name,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=None,
+            annotation=Annotated[annotation, q],
+        )
+
+    params = [_param("", list[python_type] | None)]
+    params.append(_param("ne", list[python_type] | None))
+    params.append(_param("isnull", bool | None))
+
+    if python_type in (int, float):
+        for op in ("lt", "lte", "gt", "gte"):
+            params.append(_param(op, python_type | None))
+    elif python_type is str:
+        params.append(_param("like", str | None))
+        params.append(_param("ilike", str | None))
+    elif python_type in (date, datetime):
+        tp = datetime if python_type is datetime else date
+        for op in ("lt", "lte", "gt", "gte"):
+            params.append(_param(op, tp | None))
+        params.append(_param("year", int | None))
+        params.append(_param("quarter", str | None))
+        params.append(_param("month", str | None))
+        params.append(_param("week", str | None))
+        params.append(_param("relative", str | None))
+
+    return params
+
+
+def inject_query_params(
+    handler: Any,
+    filterable_fields: list[str],
+    model: Any = None,
+    joined_models: dict[str, type] | None = None,
+) -> None:
+    """
+    Extend handler.__signature__ with typed query params for each filterable field.
+
+    When model and joined_models are provided, each param is typed from the
+    SQLAlchemy column type and operator-suffixed variants are also injected
+    (e.g. name__ilike, age__gte) so they appear in the OpenAPI schema.
+
+    Dotted field names (e.g. "city.name") become param name city__name with
+    Query(alias="city.name") so the actual URL param stays dotted.
+
+    The handler must declare **_filter_kwargs to absorb the injected values
+    (filtering reads request.query_params directly, not these params).
     """
     existing_sig = inspect.signature(handler)
     base_params = [
@@ -25,22 +103,25 @@ def inject_query_params(handler: Any, filterable_fields: list[str]) -> None:
         for p in existing_sig.parameters.values()
         if p.kind != inspect.Parameter.VAR_KEYWORD
     ]
-    filter_params = []
+    filter_params: list[inspect.Parameter] = []
     for field in filterable_fields:
-        if "." in field:
-            param_name = field.replace(".", "__")
-            annotation = Annotated[list[str] | None, Query(alias=field)]
+        if model is not None:
+            filter_params.extend(_make_filter_params(field, model, joined_models or {}))
         else:
-            param_name = field
-            annotation = Annotated[list[str] | None, Query()]
-        filter_params.append(
-            inspect.Parameter(
-                name=param_name,
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=annotation,
+            if "." in field:
+                param_name = field.replace(".", "__")
+                annotation = Annotated[list[str] | None, Query(alias=field)]
+            else:
+                param_name = field
+                annotation = Annotated[list[str] | None, Query()]
+            filter_params.append(
+                inspect.Parameter(
+                    name=param_name,
+                    kind=inspect.Parameter.KEYWORD_ONLY,
+                    default=None,
+                    annotation=annotation,
+                )
             )
-        )
     handler.__signature__ = inspect.Signature(
         base_params + filter_params,
         return_annotation=existing_sig.return_annotation,

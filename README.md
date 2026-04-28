@@ -802,6 +802,8 @@ All list endpoints return the same paginated envelope:
 
 Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must be in the Pydantic schema (auto-joined via `joinedload`).
 
+All filter params — including operator-suffixed variants — are fully typed in the OpenAPI schema based on the SQLAlchemy column type. For example, `age__gte` is documented as `integer`, `created_at__lte` as `date`, and `name__isnull` as `boolean`. This means Swagger UI and generated clients show the correct input types with no extra configuration.
+
 ### Date period filters
 
 Five additional operators collapse an entire time period into a `>= start AND < end` range. They work on both `date` and `datetime` columns (datetime columns use UTC-aware bounds automatically).

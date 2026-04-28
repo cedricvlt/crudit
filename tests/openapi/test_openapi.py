@@ -7,8 +7,10 @@ body and no spurious query parameters when a permission_dep factory is used.
 
 from fastapi import FastAPI, APIRouter
 from pydantic import BaseModel
+from datetime import date
+
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String
+from sqlalchemy import Boolean, Date, Integer, String
 
 from crudit.create.config import CreateConfig
 from crudit.create.endpoint import create_endpoint
@@ -39,6 +41,8 @@ class _Item(_Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String)
     sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     _order_fields = ("name",)
 
 
@@ -92,6 +96,22 @@ def _query_params(op: dict) -> set[str]:
 
 def _path_params(op: dict) -> set[str]:
     return {p["name"] for p in op.get("parameters", []) if p["in"] == "path"}
+
+
+def _param_schema(op: dict, name: str) -> dict | None:
+    """Return the OpenAPI schema dict for a query param by name (or alias)."""
+    for p in op.get("parameters", []):
+        if p.get("in") == "query" and p.get("name") == name:
+            return p.get("schema", {})
+    return None
+
+
+def _non_null_schema(schema: dict) -> dict:
+    """For anyOf-nullable schemas, return the non-null variant."""
+    if "anyOf" in schema:
+        non_null = [s for s in schema["anyOf"] if s.get("type") != "null"]
+        return non_null[0] if non_null else schema
+    return schema
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +233,93 @@ class TestListOpenAPI:
         schema = _build_schema(register)
         op = _op(schema, "get", "/items")
         assert "items" in op.get("tags", [])
+
+    def test_string_filter_has_string_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["name"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        s = _non_null_schema(_param_schema(op, "name"))
+        assert s.get("type") == "array"
+        assert s.get("items", {}).get("type") == "string"
+
+    def test_integer_filter_has_integer_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        s = _non_null_schema(_param_schema(op, "id"))
+        assert s.get("type") == "array"
+        assert s.get("items", {}).get("type") == "integer"
+
+    def test_string_filter_operator_params_appear(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["name"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        params = _query_params(op)
+        assert "name__ilike" in params
+        assert "name__like" in params
+        assert "name__ne" in params
+        assert "name__isnull" in params
+
+    def test_integer_filter_operator_params_appear(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        params = _query_params(op)
+        assert "id__gte" in params
+        assert "id__lte" in params
+        assert "id__gt" in params
+        assert "id__lt" in params
+        assert "id__ne" in params
+        assert "id__isnull" in params
+
+    def test_integer_operator_params_have_integer_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        assert _non_null_schema(_param_schema(op, "id__gte")).get("type") == "integer"
+        assert _non_null_schema(_param_schema(op, "id__lt")).get("type") == "integer"
+
+    def test_isnull_param_has_boolean_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["name"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        s = _non_null_schema(_param_schema(op, "name__isnull"))
+        assert s.get("type") == "boolean"
+
+    def test_date_filter_operator_params_appear(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["created_at"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        params = _query_params(op)
+        assert "created_at__gte" in params
+        assert "created_at__lte" in params
+        assert "created_at__year" in params
+        assert "created_at__quarter" in params
+        assert "created_at__month" in params
+        assert "created_at__week" in params
+        assert "created_at__relative" in params
+
+    def test_date_year_param_has_integer_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["created_at"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        assert _non_null_schema(_param_schema(op, "created_at__year")).get("type") == "integer"
 
 
 # ---------------------------------------------------------------------------
