@@ -81,7 +81,7 @@ class District(Base):
     name: Mapped[str]
     is_active: Mapped[bool] = mapped_column(default=True)
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
-    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     city: Mapped[City] = relationship(back_populates="districts")
     allowed_users: Mapped[list[User]] = relationship(secondary=district_allowed_users)
     _order_fields = ("name",)
@@ -418,7 +418,7 @@ ParentParam(
 )
 ```
 
-Multiple parents are supported (e.g. `/tenants/{tenant_id}/cities/{city_id}/districts`).
+Multiple parents are supported (e.g. `/companies/{company_id}/cities/{city_id}/districts`).
 
 ### Auto-complete fields
 
@@ -432,15 +432,15 @@ Multiple parents are supported (e.g. `/tenants/{tenant_id}/cities/{city_id}/dist
 For any field that needs custom logic, provide a setter callable in `field_setters`. Setters run after the built-in auto-complete and may be sync or async.
 
 ```python
-def set_tenant(obj, request, current_user):
-    return current_user.tenant_id
+def set_company(obj, request, current_user):
+    return current_user.company_id
 
 async def set_slug(obj, request, current_user):
     return slugify(obj.name)
 
 CreateConfig(
     field_setters={
-        "tenant_id": set_tenant,  # (obj, request, current_user) -> value
+        "company_id": set_company,  # (obj, request, current_user) -> value
         "slug": set_slug,
     },
 )
@@ -555,7 +555,7 @@ For each PATCH request, crudit executes the following steps in order:
 
 1. Route-level auth / permission check
 2. Fetch object by PK — returns **404** if not found
-3. Object-level permission check (`tenant_id` / `allowed_users`)
+3. Object-level permission check (`company_id` / `allowed_users`)
 4. Parse body with `update_schema` → `patch_data` (only fields the client sent)
 5. Auto-fill `updated_at` into `patch_data` (if applicable)
 6. Auto-fill `updated_by` into `patch_data` (if applicable)
@@ -597,7 +597,7 @@ For each DELETE request, crudit executes the following steps in order:
 
 1. Route-level auth / permission check
 2. Fetch object by PK — returns **404** if not found
-3. Object-level permission check (`tenant_id` / `allowed_users`)
+3. Object-level permission check (`company_id` / `allowed_users`)
 4. Call `before_delete(obj, request, current_user)` — raise to abort
 5. `await db.delete(obj)` + `await db.commit()`
 6. Call `after_delete(obj, request, current_user)`
@@ -662,7 +662,7 @@ For each POST request, crudit executes the following steps in order:
 
 1. Route-level auth / permission check
 2. Fetch all objects matching `ids` + path filters — returns **404** if any are missing or out of scope
-3. Object-level permission check (`tenant_id` / `allowed_users`) — returns **403** for inaccessible objects
+3. Object-level permission check (`company_id` / `allowed_users`) — returns **403** for inaccessible objects
 4. Call `before_reorder(objects, request, current_user)` — raise to abort
 5. Assign `sort_order = position index` for each object in order
 6. `await db.commit()`
@@ -854,10 +854,10 @@ list_endpoint(
 
 | Model attribute | Condition |
 |---|---|
-| `tenant_id` column | user's `tenant_id` must match the row's `tenant_id` |
+| `company_id` column | user's `company_id` must match the row's `company_id` |
 | `allowed_users` relationship | user's `id` must appear in the row's `allowed_users` |
 
-When both are present they combine with **OR** — a row is accessible if the tenant matches *or* the user is explicitly listed.
+When both are present they combine with **OR** — a row is accessible if the company matches *or* the user is explicitly listed.
 
 The enforcement mechanism differs by endpoint:
 

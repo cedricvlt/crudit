@@ -26,8 +26,8 @@ district_allowed_users = Table(
 )
 
 
-class Tenant(Base):
-    __tablename__ = "tenants"
+class Company(Base):
+    __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
@@ -40,9 +40,9 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
 
-    tenant: Mapped[Tenant | None] = relationship("Tenant")
+    company: Mapped[Company | None] = relationship("Company")
 
     _order_fields = ("name",)
 
@@ -65,7 +65,7 @@ class District(Base):
     name: Mapped[str] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
-    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -111,34 +111,34 @@ async def db_session(engine) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture
 async def seed(db_session: AsyncSession):
-    tenant1 = Tenant(id=1, name="Acme Corp")
-    tenant2 = Tenant(id=2, name="Other Corp")
+    company1 = Company(id=1, name="Acme Corp")
+    company2 = Company(id=2, name="Other Corp")
 
-    user1 = User(id=1, name="Alice", tenant_id=1)
-    user2 = User(id=2, name="Bob", tenant_id=2)
-    user3 = User(id=3, name="Carol", tenant_id=1)
+    user1 = User(id=1, name="Alice", company_id=1)
+    user2 = User(id=2, name="Bob", company_id=2)
+    user3 = User(id=3, name="Carol", company_id=1)
 
     city1 = City(id=1, name="Paris")
     city2 = City(id=2, name="London")
 
-    d1 = District(id=1, name="Montmartre", city_id=1, tenant_id=1, is_active=True,
+    d1 = District(id=1, name="Montmartre", city_id=1, company_id=1, is_active=True,
                   created_at=datetime(2024, 1, 15, tzinfo=timezone.utc))
-    d2 = District(id=2, name="Marais", city_id=1, tenant_id=1, is_active=False,
+    d2 = District(id=2, name="Marais", city_id=1, company_id=1, is_active=False,
                   created_at=datetime(2024, 6, 1, tzinfo=timezone.utc))
-    d3 = District(id=3, name="Downtown", city_id=2, tenant_id=2, is_active=True)
-    d4 = District(id=4, name="Uptown", city_id=2, tenant_id=2, is_active=True)
+    d3 = District(id=3, name="Downtown", city_id=2, company_id=2, is_active=True)
+    d4 = District(id=4, name="Uptown", city_id=2, company_id=2, is_active=True)
 
-    # district 1 allows user3 explicitly (different tenant)
+    # district 1 allows user3 explicitly (different company)
     d1.allowed_users.append(user3)
 
-    db_session.add_all([tenant1, tenant2, user1, user2, user3, city1, city2, d1, d2, d3, d4])
+    db_session.add_all([company1, company2, user1, user2, user3, city1, city2, d1, d2, d3, d4])
     await db_session.commit()
 
-    yield {"tenants": [tenant1, tenant2], "users": [user1, user2, user3],
+    yield {"companies": [company1, company2], "users": [user1, user2, user3],
            "cities": [city1, city2], "districts": [d1, d2, d3, d4]}
 
     # Cleanup
-    for obj in [d1, d2, d3, d4, city1, city2, user1, user2, user3, tenant1, tenant2]:
+    for obj in [d1, d2, d3, d4, city1, city2, user1, user2, user3, company1, company2]:
         await db_session.delete(obj)
     await db_session.commit()
 

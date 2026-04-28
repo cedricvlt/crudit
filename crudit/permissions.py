@@ -58,9 +58,9 @@ def _build_object_level_checks(
 ) -> list[Callable[[Any], bool]]:
     checks: list[Callable[[Any], bool]] = []
 
-    if hasattr(model, "tenant_id") and hasattr(current_user, "tenant_id"):
-        tenant_id = current_user.tenant_id
-        checks.append(lambda obj, _t=tenant_id: obj.tenant_id == _t)
+    if hasattr(model, "company_id") and hasattr(current_user, "company_id"):
+        company_id = current_user.company_id
+        checks.append(lambda obj, _t=company_id: obj.company_id == _t)
 
     if has_allowed_users_relationship(model):
         user_id = getattr(current_user, "id", None)
@@ -78,8 +78,8 @@ def _build_row_level_conditions(
 ) -> list[Any]:
     conditions = []
 
-    if hasattr(model, "tenant_id") and hasattr(current_user, "tenant_id"):
-        conditions.append(model.tenant_id == current_user.tenant_id)
+    if hasattr(model, "company_id") and hasattr(current_user, "company_id"):
+        conditions.append(model.company_id == current_user.company_id)
 
     if has_allowed_users_relationship(model):
         user_id = getattr(current_user, "id", None)

@@ -32,7 +32,7 @@ crudit/
     config.py     # @dataclass config (ListConfig, ReadConfig, etc.)
     endpoint.py   # *_endpoint() registration function
   joins.py        # join resolution — runs once at registration time
-  permissions.py  # row-level permission helpers (tenant_id / allowed_users)
+  permissions.py  # row-level permission helpers (company_id / allowed_users)
   schemas.py      # shared response types: PaginatedResponse, OptionItem
   types.py        # Callable type aliases for hook signatures
   utils.py        # call_hook() — detects sync/async and awaits accordingly
@@ -45,7 +45,7 @@ crudit/
 
 **Dot-notation for nested fields.** `filterable_fields=["city.name"]` or `sortable_fields=["city.name"]` triggers an explicit SQL `JOIN` on that relationship and switches from `joinedload` to `contains_eager`. This is resolved per-request by `collect_needed_joins()` in `joins.py`.
 
-**Row-level permissions** are auto-detected from model attributes: if the model has `tenant_id`, the query is scoped to `current_user.tenant_id`; if it has `allowed_users`, a subquery filter is applied. Both conditions combine with OR. For `list_endpoint` this is a SQL WHERE clause; for `read_endpoint` it is a Python check that returns 403 (not 404).
+**Row-level permissions** are auto-detected from model attributes: if the model has `company_id`, the query is scoped to `current_user.company_id`; if it has `allowed_users`, a subquery filter is applied. Both conditions combine with OR. For `list_endpoint` this is a SQL WHERE clause; for `read_endpoint` it is a Python check that returns 403 (not 404).
 
 **Hooks are sync/async transparent.** `utils.py:call_hook()` uses `inspect.iscoroutinefunction` to decide whether to `await` a hook, so all hook callables may be either sync or async.
 
@@ -53,7 +53,7 @@ crudit/
 
 ### Test fixture structure
 
-`tests/conftest.py` defines shared ORM models (`Tenant`, `User`, `City`, `District`) and fixtures (`engine` session-scoped, `db_session` function-scoped with rollback, `seed` which inserts and cleans up rows). Each endpoint subdirectory (`tests/list/`, `tests/create/`, etc.) has its own `conftest.py` and test files.
+`tests/conftest.py` defines shared ORM models (`Company`, `User`, `City`, `District`) and fixtures (`engine` session-scoped, `db_session` function-scoped with rollback, `seed` which inserts and cleans up rows). Each endpoint subdirectory (`tests/list/`, `tests/create/`, etc.) has its own `conftest.py` and test files.
 
 ## Good practices
 

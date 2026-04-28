@@ -47,10 +47,10 @@ def make_delete_client(engine):
 
 @pytest_asyncio.fixture
 async def delete_target(engine, seed):
-    """District (id=100, tenant_id=1) in its own session; safe teardown."""
+    """District (id=100, company_id=1) in its own session; safe teardown."""
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        d = District(id=100, name="ToDelete", city_id=1, tenant_id=1, is_active=True)
+        d = District(id=100, name="ToDelete", city_id=1, company_id=1, is_active=True)
         session.add(d)
         await session.commit()
 
@@ -65,11 +65,11 @@ async def delete_target(engine, seed):
 
 @pytest_asyncio.fixture
 async def delete_target_allowed_user(engine, seed):
-    """District (id=101, tenant_id=2) with user3 in allowed_users; own session."""
+    """District (id=101, company_id=2) with user3 in allowed_users; own session."""
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         user3 = await session.get(User, 3)
-        d = District(id=101, name="ToDeleteAllowed", city_id=1, tenant_id=2, is_active=True)
+        d = District(id=101, name="ToDeleteAllowed", city_id=1, company_id=2, is_active=True)
         d.allowed_users.append(user3)
         session.add(d)
         await session.commit()

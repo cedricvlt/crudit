@@ -59,7 +59,7 @@ async def test_delete_login_not_required_no_user_returns_204(delete_target, make
 async def test_delete_permission_dep_denied_returns_403(seed, make_delete_client):
     from fastapi import HTTPException
 
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def deny_dep(*_perms):
         async def dep():
@@ -77,7 +77,7 @@ async def test_delete_permission_dep_denied_returns_403(seed, make_delete_client
 
 @pytest.mark.asyncio
 async def test_delete_permission_dep_allowed_returns_204(delete_target, make_delete_client, engine):
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def allow_dep(*_perms):
         async def dep():
@@ -95,13 +95,13 @@ async def test_delete_permission_dep_allowed_returns_204(delete_target, make_del
 
 
 # ---------------------------------------------------------------------------
-# Row-level permissions — tenant_id
+# Row-level permissions — company_id
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_delete_wrong_tenant_returns_403(seed, make_delete_client):
-    # district 3 has tenant_id=2; user has tenant_id=1 — mismatch, no allowed_users
-    user = User(id=1, name="Alice", tenant_id=1)
+async def test_delete_wrong_company_returns_403(seed, make_delete_client):
+    # district 3 has company_id=2; user has company_id=1 — mismatch, no allowed_users
+    user = User(id=1, name="Alice", company_id=1)
     config = DeleteConfig(login_required=True)
     async with await make_delete_client(config, current_user=user) as client:
         r = await client.delete("/districts/3")
@@ -109,9 +109,9 @@ async def test_delete_wrong_tenant_returns_403(seed, make_delete_client):
 
 
 @pytest.mark.asyncio
-async def test_delete_correct_tenant_returns_204(delete_target, make_delete_client, engine):
-    # delete_target has tenant_id=1; user has tenant_id=1
-    user = User(id=1, name="Alice", tenant_id=1)
+async def test_delete_correct_company_returns_204(delete_target, make_delete_client, engine):
+    # delete_target has company_id=1; user has company_id=1
+    user = User(id=1, name="Alice", company_id=1)
     config = DeleteConfig(login_required=True)
     async with await make_delete_client(config, current_user=user) as client:
         r = await client.delete("/districts/100")
@@ -124,9 +124,9 @@ async def test_delete_correct_tenant_returns_204(delete_target, make_delete_clie
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_delete_not_in_allowed_users_wrong_tenant_returns_403(seed, make_delete_client):
-    # user2 (tenant_id=2) is NOT in district 1's allowed_users and tenant doesn't match
-    user2 = User(id=2, name="Bob", tenant_id=2)
+async def test_delete_not_in_allowed_users_wrong_company_returns_403(seed, make_delete_client):
+    # user2 (company_id=2) is NOT in district 1's allowed_users and company doesn't match
+    user2 = User(id=2, name="Bob", company_id=2)
     config = DeleteConfig(login_required=True)
     async with await make_delete_client(config, current_user=user2) as client:
         r = await client.delete("/districts/1")
@@ -137,8 +137,8 @@ async def test_delete_not_in_allowed_users_wrong_tenant_returns_403(seed, make_d
 async def test_delete_via_allowed_users_returns_204(
     delete_target_allowed_user, make_delete_client, engine
 ):
-    # district 101 has tenant_id=2; user3 has tenant_id=1 but is in allowed_users
-    user3 = User(id=3, name="Carol", tenant_id=1)
+    # district 101 has company_id=2; user3 has company_id=1 but is in allowed_users
+    user3 = User(id=3, name="Carol", company_id=1)
     config = DeleteConfig(login_required=True)
     async with await make_delete_client(config, current_user=user3) as client:
         r = await client.delete("/districts/101")

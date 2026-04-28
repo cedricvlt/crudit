@@ -154,16 +154,16 @@ async def test_multi_value_filter_as_or(seed, make_client):
     async with await make_client(
         ListConfig(
             path_filters={},
-            filterable_fields=["tenant_id"],
+            filterable_fields=["company_id"],
             login_required=False,
         )
     ) as client:
-        r = await client.get("/cities/1/districts?tenant_id=1&tenant_id=2")
+        r = await client.get("/cities/1/districts?company_id=1&company_id=2")
         assert r.status_code == 200
         data = r.json()["data"]
         ids = {d["city_id"] for d in data}
         assert ids == {1, 2}
-        assert len(data) == 4  # all districts from both tenants
+        assert len(data) == 4  # all districts from both companies
 
 
 @pytest.mark.asyncio

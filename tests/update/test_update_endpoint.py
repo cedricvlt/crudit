@@ -79,7 +79,7 @@ async def test_update_login_not_required_no_user_returns_200(seed, make_update_c
 async def test_update_permission_dep_denied_returns_403(seed, make_update_client):
     from fastapi import HTTPException
 
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def deny_dep(*_perms):
         async def dep():
@@ -97,7 +97,7 @@ async def test_update_permission_dep_denied_returns_403(seed, make_update_client
 
 @pytest.mark.asyncio
 async def test_update_permission_dep_allowed_returns_200(seed, make_update_client):
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def allow_dep(*_perms):
         async def dep():
@@ -114,25 +114,25 @@ async def test_update_permission_dep_allowed_returns_200(seed, make_update_clien
 
 
 # ---------------------------------------------------------------------------
-# Tenant row-level permissions
+# Company row-level permissions
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_update_tenant_match_returns_200(seed, make_update_client):
-    user = User(id=1, name="Alice", tenant_id=1)
+async def test_update_company_match_returns_200(seed, make_update_client):
+    user = User(id=1, name="Alice", company_id=1)
     config = UpdateConfig(login_required=True)
     async with await make_update_client(config, current_user=user) as client:
-        r = await client.patch("/districts/1", json={"name": "TenantOK"})
+        r = await client.patch("/districts/1", json={"name": "CompanyOK"})
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_update_tenant_mismatch_returns_403(seed, make_update_client):
-    user = User(id=2, name="Bob", tenant_id=2)
+async def test_update_company_mismatch_returns_403(seed, make_update_client):
+    user = User(id=2, name="Bob", company_id=2)
     config = UpdateConfig(login_required=True)
     async with await make_update_client(config, current_user=user) as client:
-        # district 1 has tenant_id=1, user has tenant_id=2
-        r = await client.patch("/districts/1", json={"name": "WrongTenant"})
+        # district 1 has company_id=1, user has company_id=2
+        r = await client.patch("/districts/1", json={"name": "WrongCompany"})
     assert r.status_code == 403
 
 
@@ -151,7 +151,7 @@ async def test_update_sets_updated_at(seed, make_update_client):
 
 @pytest.mark.asyncio
 async def test_update_sets_updated_by(seed, make_update_client):
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
     config = UpdateConfig(login_required=True)
     async with await make_update_client(config, current_user=user) as client:
         r = await client.patch("/districts/1", json={"name": "ByAlice"})
@@ -174,12 +174,12 @@ async def test_update_updated_by_not_set_without_user(seed, make_update_client):
 
 @pytest.mark.asyncio
 async def test_update_field_setter(seed, make_update_client):
-    def mark_tenant(obj, request, user):
+    def mark_company(obj, request, user):
         return 1
 
     config = UpdateConfig(
         login_required=False,
-        field_setters={"tenant_id": mark_tenant},
+        field_setters={"company_id": mark_company},
     )
     async with await make_update_client(config) as client:
         r = await client.patch("/districts/3", json={"name": "SetterApplied"})
@@ -188,12 +188,12 @@ async def test_update_field_setter(seed, make_update_client):
 
 @pytest.mark.asyncio
 async def test_update_async_field_setter(seed, make_update_client):
-    async def mark_tenant(obj, request, user):
+    async def mark_company(obj, request, user):
         return 1
 
     config = UpdateConfig(
         login_required=False,
-        field_setters={"tenant_id": mark_tenant},
+        field_setters={"company_id": mark_company},
     )
     async with await make_update_client(config) as client:
         r = await client.patch("/districts/3", json={"name": "AsyncSetter"})
@@ -210,10 +210,10 @@ async def test_field_setter_receives_obj_request_user(seed, make_update_client):
         received["user"] = user
         return 1
 
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
     config = UpdateConfig(
         login_required=True,
-        field_setters={"tenant_id": capture},
+        field_setters={"company_id": capture},
     )
     async with await make_update_client(config, current_user=user) as client:
         r = await client.patch("/districts/1", json={"name": "CaptureTest"})

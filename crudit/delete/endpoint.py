@@ -29,7 +29,7 @@ def delete_endpoint(
     """
     Register a DELETE endpoint that removes an existing object and returns 204 No Content.
 
-    Row-level permission checks (tenant_id / allowed_users) are applied before deletion.
+    Row-level permission checks (company_id / allowed_users) are applied before deletion.
     """
     pk_field = _detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type

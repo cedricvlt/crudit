@@ -103,7 +103,7 @@ async def test_create_login_not_required_no_user_returns_201(seed, make_create_c
 async def test_create_permission_dep_denied_returns_403(seed, make_create_client):
     from fastapi import HTTPException
 
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def deny_dep(*_perms):
         async def dep():
@@ -122,7 +122,7 @@ async def test_create_permission_dep_denied_returns_403(seed, make_create_client
 
 @pytest.mark.asyncio
 async def test_create_permission_dep_allowed_returns_201(seed, make_create_client, cleanup_districts):
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
 
     def allow_dep(*_perms):
         async def dep():
@@ -159,7 +159,7 @@ async def test_create_sets_created_at(seed, make_create_client, cleanup_district
 
 @pytest.mark.asyncio
 async def test_create_sets_created_by(seed, make_create_client, cleanup_districts):
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
     config = CreateConfig(
         login_required=True,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
@@ -190,32 +190,32 @@ async def test_create_created_by_not_set_without_user(seed, make_create_client, 
 
 @pytest.mark.asyncio
 async def test_create_field_setter(seed, make_create_client, cleanup_districts):
-    def set_tenant(obj, request, user):
+    def set_company(obj, request, user):
         return 1
 
     config = CreateConfig(
         login_required=False,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
-        field_setters={"tenant_id": set_tenant},
+        field_setters={"company_id": set_company},
     )
     async with await make_create_client(config) as client:
-        r = await client.post("/cities/1/districts", json={"name": "WithTenant"})
+        r = await client.post("/cities/1/districts", json={"name": "WithCompany"})
     assert r.status_code == 201
     cleanup_districts.append(r.json()["id"])
 
 
 @pytest.mark.asyncio
 async def test_create_async_field_setter(seed, make_create_client, cleanup_districts):
-    async def set_tenant(obj, request, user):
+    async def set_company(obj, request, user):
         return 2
 
     config = CreateConfig(
         login_required=False,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
-        field_setters={"tenant_id": set_tenant},
+        field_setters={"company_id": set_company},
     )
     async with await make_create_client(config) as client:
-        r = await client.post("/cities/1/districts", json={"name": "AsyncTenant"})
+        r = await client.post("/cities/1/districts", json={"name": "AsyncCompany"})
     assert r.status_code == 201
     cleanup_districts.append(r.json()["id"])
 
@@ -230,11 +230,11 @@ async def test_field_setter_receives_obj_request_user(seed, make_create_client, 
         received["user"] = user
         return 1
 
-    user = User(id=1, name="Alice", tenant_id=1)
+    user = User(id=1, name="Alice", company_id=1)
     config = CreateConfig(
         login_required=True,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
-        field_setters={"tenant_id": capture},
+        field_setters={"company_id": capture},
     )
     async with await make_create_client(config, current_user=user) as client:
         r = await client.post("/cities/1/districts", json={"name": "CaptureTest"})

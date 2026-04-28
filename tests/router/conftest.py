@@ -61,7 +61,7 @@ async def router_delete_target(engine, seed):
     """District (id=100) created in its own session; safe teardown after delete test."""
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        d = District(id=100, name="ToDelete", city_id=1, tenant_id=1, is_active=True)
+        d = District(id=100, name="ToDelete", city_id=1, company_id=1, is_active=True)
         session.add(d)
         await session.commit()
 
