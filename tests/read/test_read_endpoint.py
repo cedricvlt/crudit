@@ -154,7 +154,7 @@ async def test_read_explicit_user_access_overrides_company(seed, make_read_clien
 async def test_read_before_query_hook(seed, make_read_client):
     calls = []
 
-    def before(query, request, user):
+    def before(query, ctx):
         calls.append(1)
         return query
 
@@ -169,7 +169,7 @@ async def test_read_before_query_hook(seed, make_read_client):
 async def test_read_after_query_hook(seed, make_read_client):
     seen = []
 
-    def after(row, request, user):
+    def after(row, ctx):
         seen.append(row)
         return row
 
@@ -186,11 +186,11 @@ async def test_read_after_query_hook(seed, make_read_client):
 async def test_read_async_hooks(seed, make_read_client):
     log = []
 
-    async def before(query, request, user):
+    async def before(query, ctx):
         log.append("before")
         return query
 
-    async def after(row, request, user):
+    async def after(row, ctx):
         log.append("after")
         return row
 

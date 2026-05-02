@@ -153,7 +153,7 @@ def test_both_label_raises():
 async def test_before_query_hook(seed, make_client):
     calls = []
 
-    def before(query, request, user):
+    def before(query, ctx):
         calls.append(1)
         return query
 
@@ -173,7 +173,7 @@ async def test_before_query_hook(seed, make_client):
 async def test_after_query_hook(seed, make_client):
     seen = []
 
-    def after(rows, request, user):
+    def after(rows, ctx):
         seen.extend(rows)
         return rows
 
@@ -194,7 +194,7 @@ async def test_after_query_hook(seed, make_client):
 async def test_async_before_query_hook(seed, make_client):
     calls = []
 
-    async def before(query, request, user):
+    async def before(query, ctx):
         calls.append(1)
         return query
 
@@ -212,7 +212,7 @@ async def test_async_before_query_hook(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_after_query_hook_can_filter(seed, make_client):
-    def after(rows, request, user):
+    def after(rows, ctx):
         return [r for r in rows if r.is_active]
 
     async with await make_client(

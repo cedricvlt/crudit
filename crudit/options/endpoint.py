@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
+from crudit.context import CruditContext
 from crudit.exceptions import CruditConfigError
 from crudit.joins import JoinInfo, collect_needed_joins, resolve_joins
 from crudit.types import PermissionDepFn
@@ -82,6 +83,12 @@ def options_endpoint(
     ) -> Any:
         filter_params = extract_filter_params(request.query_params)
         path_params = dict(request.path_params)
+        ctx = CruditContext(
+            user=current_user,
+            path_params=path_params,
+            query_params=dict(request.query_params),
+            request=request,
+        )
 
         query = select(_model)
         query = apply_path_filters(query, _model, _config.path_filters, path_params)
@@ -120,7 +127,7 @@ def options_endpoint(
         )
 
         if _config.before_query is not None:
-            query = await call_hook(_config.before_query, query, request, current_user)
+            query = await call_hook(_config.before_query, query, ctx)
 
         # COUNT (before sort/pagination)
         count_query = select(func.count()).select_from(query.subquery())
@@ -145,7 +152,7 @@ def options_endpoint(
         rows = list(result.scalars().unique())
 
         if _config.after_query is not None:
-            rows = await call_hook(_config.after_query, rows, request, current_user)
+            rows = await call_hook(_config.after_query, rows, ctx)
 
         data = [_build_item(row, _config) for row in rows]
 

@@ -901,19 +901,21 @@ All hooks may be **sync or async** — crudit detects and awaits accordingly.
 ### List / options endpoint hooks
 
 ```python
-async def log_query(query: Select, request: Request, current_user) -> Select:
-    logger.info("list query by %s", current_user.id)
+from crudit import CruditContext
+
+async def log_query(query: Select, ctx: CruditContext) -> Select:
+    logger.info("list query by %s", ctx.user.id)
     return query
 
-def redact_sensitive(rows: list, request: Request, current_user) -> list:
-    if not current_user.is_admin:
+def redact_sensitive(rows: list, ctx: CruditContext) -> list:
+    if not ctx.user.is_admin:
         for row in rows:
             row.secret = None
     return rows
 
 config = ListConfig(
-    before_query=log_query,   # (query, request, current_user) -> query
-    after_query=redact_sensitive,  # (rows, request, current_user) -> rows
+    before_query=log_query,   # (query, ctx) -> query
+    after_query=redact_sensitive,  # (rows, ctx) -> rows
 )
 ```
 
@@ -922,22 +924,77 @@ The same hooks apply to `OptionsConfig`. `after_query` receives ORM model instan
 ### Read endpoint hooks
 
 ```python
-async def log_read(query: Select, request: Request, current_user) -> Select:
-    logger.info("read query by %s", current_user.id)
+async def log_read(query: Select, ctx: CruditContext) -> Select:
+    logger.info("read query by %s", ctx.user.id)
     return query
 
-def redact_single(row, request: Request, current_user):
-    if not current_user.is_admin:
+def redact_single(row, ctx: CruditContext):
+    if not ctx.user.is_admin:
         row.secret = None
     return row
 
 config = ReadConfig(
-    before_query=log_read,    # (query, request, current_user) -> query
-    after_query=redact_single,  # (row, request, current_user) -> row
+    before_query=log_read,    # (query, ctx) -> query
+    after_query=redact_single,  # (row, ctx) -> row
 )
 ```
 
 `before_query` runs before the database call. `after_query` receives the ORM object after the permission check passes, before serialization.
+
+### `CruditContext`
+
+Hooks for `list_endpoint`, `options_endpoint`, and `read_endpoint` receive a `CruditContext` instead of the FastAPI `Request`. This lets the same business logic run from non-HTTP callers (MCP tools, background jobs, CLIs):
+
+```python
+@dataclass
+class CruditContext:
+    user: Any                          # current user (or None)
+    path_params: dict[str, Any]        # from request.path_params or supplied directly
+    query_params: dict[str, str]       # from request.query_params or supplied directly
+    request: Request | None            # underlying Starlette request (None off-HTTP)
+    extras: dict[str, Any]             # caller-supplied scratch space
+```
+
+Create, update, delete, and reorder hooks still receive `(obj, request, current_user)` for now.
+
+---
+
+## Calling endpoints as services
+
+Each endpoint module exposes a pure async **service** function that the FastAPI handler delegates to. The service has no `Request` / `Depends` coupling, so it can be called directly from MCP tools, scheduled jobs, or tests:
+
+```python
+from crudit import CruditContext, ListConfig, list_service, read_service, CruditNotFound
+
+# List
+ctx = CruditContext(user=current_user, path_params={"city_id": 1})
+result = await list_service(
+    db,
+    ctx,
+    model=District,
+    schema=DistrictSchema,
+    config=ListConfig(path_filters={"city_id": "city_id"}, filterable_fields=["name"]),
+    q="mont",
+    sort="name",
+    page=1,
+    items_per_page=20,
+    filter_params={"name": ["mont"]},  # same shape as extract_filter_params(...)
+)
+# result is a PaginatedResponse[DistrictSchema]; or an int when count_only=True
+
+# Read
+try:
+    obj = await read_service(
+        db, ctx,
+        model=District, schema=DistrictSchema,
+        config=ReadConfig(login_required=True),
+        id=42,
+    )
+except CruditNotFound:
+    ...
+```
+
+Services raise domain exceptions (`CruditNotFound`, `CruditForbidden`, `CruditValidationError`) instead of `HTTPException`. The endpoint layer is the only place that translates them to HTTP status codes.
 
 ---
 

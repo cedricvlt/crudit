@@ -43,7 +43,7 @@ async def test_path_filter_applied(seed, make_client):
 async def test_before_query_hook(seed, make_client):
     calls = []
 
-    def before(query, request, user):
+    def before(query, ctx):
         calls.append(1)
         return query
 
@@ -62,7 +62,7 @@ async def test_before_query_hook(seed, make_client):
 async def test_after_query_hook(seed, make_client):
     seen = []
 
-    def after(rows, request, user):
+    def after(rows, ctx):
         seen.extend(rows)
         return rows
 
@@ -82,11 +82,11 @@ async def test_after_query_hook(seed, make_client):
 async def test_async_hooks(seed, make_client):
     log = []
 
-    async def before(query, request, user):
+    async def before(query, ctx):
         log.append("before")
         return query
 
-    async def after(rows, request, user):
+    async def after(rows, ctx):
         log.append("after")
         return rows
 

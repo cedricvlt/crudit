@@ -5,20 +5,22 @@ from typing import Any, Callable
 from sqlalchemy.sql import Select
 from starlette.requests import Request
 
+from crudit.context import CruditContext
+
 # (query, raw_value, current_user) -> query
 FilterFn = Callable[[Select, str, Any], Select]
 
 # (query, raw_value, current_user) -> query
 SearchFn = Callable[[Select, str, Any], Select]
 
-# (query, request, current_user) -> query
-HookFn = Callable[[Select, Request, Any], Select]
+# (query, ctx) -> query
+HookFn = Callable[[Select, CruditContext], Select]
 
-# (results, request, current_user) -> results
-AfterFn = Callable[[list[Any], Request, Any], list[Any]]
+# (results, ctx) -> results
+AfterFn = Callable[[list[Any], CruditContext], list[Any]]
 
-# (row, request, current_user) -> row
-ReadAfterFn = Callable[[Any, Request, Any], Any]
+# (row, ctx) -> row
+ReadAfterFn = Callable[[Any, CruditContext], Any]
 
 # (obj, request, current_user) -> obj  (create hooks)
 CreateHookFn = Callable[[Any, Request, Any], Any]
