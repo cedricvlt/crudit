@@ -24,7 +24,8 @@ class JoinInfo:
     def sort_o2m_collections(self, rows: list) -> None:
         """
         Sort each o2m collection on loaded ORM rows by the related model's
-        _order_fields (if defined). Mutates rows in-place.
+        _order_fields (if defined). Mutates rows in-place. Null values are
+        sorted last and never compared against non-null values of mixed types.
         """
         for rel_name in self.o2m_rels:
             rel_model = self.joined_models[rel_name]
@@ -34,7 +35,10 @@ class JoinInfo:
             for row in rows:
                 collection = getattr(row, rel_name, None)
                 if collection is not None:
-                    collection.sort(key=lambda obj: tuple(getattr(obj, f, None) for f in order_fields))
+                    collection.sort(key=lambda obj: tuple(
+                        ((v := getattr(obj, f, None)) is None, v)
+                        for f in order_fields
+                    ))
 
     def eager_load_options(self, model: type, explicitly_joined: set[str]) -> list[_AbstractLoad]:
         """

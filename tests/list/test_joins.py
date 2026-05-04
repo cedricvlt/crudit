@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crudit import ListConfig, list_endpoint
 from crudit.exceptions import CruditConfigError
-from crudit.joins import resolve_joins
+from crudit.joins import JoinInfo, resolve_joins
 from tests.conftest import City, District
 
 
@@ -96,6 +96,59 @@ def make_city_client(engine):
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make
+
+
+def test_sort_o2m_collections_puts_nulls_last():
+    """Items whose order field is None must sort after non-null items rather
+    than raising TypeError when compared against strings/ints."""
+
+    class Item:
+        _order_fields = ("name",)
+
+        def __init__(self, name):
+            self.name = name
+
+    class Parent:
+        def __init__(self, items):
+            self.items = items
+
+    parent = Parent([Item("b"), Item(None), Item("a"), Item(None)])
+    info = JoinInfo(joined_models={"items": Item}, o2m_rels={"items"})
+
+    info.sort_o2m_collections([parent])
+
+    names = [i.name for i in parent.items]
+    assert names == ["a", "b", None, None]
+
+
+def test_sort_o2m_collections_multi_field_nulls_last():
+    """Null handling on the second order field also pushes nulls last."""
+
+    class Item:
+        _order_fields = ("group", "name")
+
+        def __init__(self, group, name):
+            self.group = group
+            self.name = name
+
+    class Parent:
+        def __init__(self, items):
+            self.items = items
+
+    parent = Parent([
+        Item("x", "b"),
+        Item("x", None),
+        Item("x", "a"),
+    ])
+    info = JoinInfo(joined_models={"items": Item}, o2m_rels={"items"})
+
+    info.sort_o2m_collections([parent])
+
+    assert [(i.group, i.name) for i in parent.items] == [
+        ("x", "a"),
+        ("x", "b"),
+        ("x", None),
+    ]
 
 
 @pytest.mark.asyncio
