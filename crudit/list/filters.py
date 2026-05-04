@@ -38,6 +38,8 @@ def apply_path_filters(
             raise HTTPException(
                 status_code=500, detail=f"Model field '{field_name}' not found."
             )
+        if isinstance(value, str):
+            value = _coerce(col, value)
         query = query.where(col == value)
     return query
 
