@@ -69,6 +69,7 @@ def crud_router(
     tags: list[str] | None = None,
     crud_endpoints: list[str] | None = None,
     extra_endpoints: list[str] | None = None,
+    path_filters: dict[str, str] | None = None,
     shared: SharedConfig | None = None,
     list: ListConfig | None = None,
     read: ReadConfig | None = None,
@@ -86,6 +87,11 @@ def crud_router(
 
     `shared` provides default auth/FastAPI fields for any verb without an explicit
     per-verb config. When a per-verb config is given it is used as-is.
+
+    `path_filters` maps URL path params onto model fields. It is forwarded to
+    list, options, reorder, and create endpoints (the verbs that operate on
+    collections or write a new row). For nested resources such as
+    ``/cities/{city_id}/districts`` set ``path_filters={"city_id": "city_id"}``.
 
     Schema routing:
       list    → list_item_schema
@@ -128,25 +134,28 @@ def crud_router(
     _tags = tags or []
     _shared_kwargs = dict(tags=_tags)
     _endpoint_kwargs = dict(login_dep=login_dep, permission_dep=permission_dep, get_db=get_db)
+    _path_filter_kwargs = dict(path_filters=path_filters) if path_filters else {}
 
     router = APIRouter()
 
     if "list" in active:
         list_cfg = list or _from_shared(ListConfig, shared, **_shared_kwargs)
-        list_endpoint(router, "", model, list_item_schema, list_cfg, **_endpoint_kwargs)
+        if model.__name__ == "ExternalResource":
+            print(list_cfg)
+        list_endpoint(router, "", model, list_item_schema, list_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "create" in active:
         create_cfg = create or _from_shared(CreateConfig, shared, **_shared_kwargs)
-        create_endpoint(router, "", model, create_schema, read_schema, create_cfg, **_endpoint_kwargs)
+        create_endpoint(router, "", model, create_schema, read_schema, create_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "options" in active:
         options_cfg = options or _from_shared(OptionsConfig, shared, **_shared_kwargs)
         _opt_schema_kwargs = {"schema": option_schema} if option_schema is not None else {}
-        options_endpoint(router, "/options", model, options_cfg, **_opt_schema_kwargs, **_endpoint_kwargs)
+        options_endpoint(router, "/options", model, options_cfg, **_opt_schema_kwargs, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "reorder" in active:
         reorder_cfg = reorder or _from_shared(ReorderConfig, shared, **_shared_kwargs)
-        reorder_endpoint(router, "/reorder", model, reorder_cfg, **_endpoint_kwargs)
+        reorder_endpoint(router, "/reorder", model, reorder_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "read" in active:
         read_cfg = read or _from_shared(ReadConfig, shared, **_shared_kwargs)

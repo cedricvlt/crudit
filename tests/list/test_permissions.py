@@ -8,7 +8,6 @@ from crudit import ListConfig
 async def test_unauthenticated_returns_401(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
         ),
         current_user=None,
@@ -21,7 +20,6 @@ async def test_unauthenticated_returns_401(seed, make_client):
 async def test_no_login_required(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         ),
         current_user=None,
@@ -37,7 +35,6 @@ async def test_company_filter_isolates_rows(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={},
             login_required=True,
         ),
         current_user=user,
@@ -62,7 +59,6 @@ async def test_allowed_users_grants_access(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={},
             login_required=True,
         ),
         current_user=user3,
@@ -87,7 +83,6 @@ async def test_permission_dep_forbidden(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
         ),
@@ -111,7 +106,6 @@ async def test_permission_dep_allowed(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             permissions=["core:district:view"],
         ),

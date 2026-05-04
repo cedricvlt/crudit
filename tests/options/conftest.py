@@ -13,12 +13,16 @@ from crudit import OptionsConfig, options_endpoint
 from tests.conftest import District, DistrictSchema
 
 
+_DEFAULT_PATH_FILTERS = {"city_id": "city_id"}
+
+
 def make_app(
     engine,
     config: OptionsConfig,
     current_user: Any = None,
     schema: type[BaseModel] | None = None,
     permission_dep: Any = None,
+    path_filters: dict[str, str] | None = _DEFAULT_PATH_FILTERS,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -35,6 +39,7 @@ def make_app(
         path="/cities/{city_id}/districts",
         model=District,
         config=config,
+        path_filters=path_filters,
         login_dep=get_current_user,
         permission_dep=permission_dep,
         schema=schema or DistrictSchema,
@@ -50,8 +55,9 @@ def make_client(engine):
         current_user: Any = None,
         schema: type[BaseModel] | None = None,
         permission_dep: Any = None,
+        path_filters: dict[str, str] | None = _DEFAULT_PATH_FILTERS,
     ) -> AsyncClient:
-        app = make_app(engine, config, current_user, schema, permission_dep)
+        app = make_app(engine, config, current_user, schema, permission_dep, path_filters)
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make_client

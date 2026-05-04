@@ -9,7 +9,6 @@ from crudit import OptionsConfig
 async def test_login_required_no_user_returns_401(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             label_field="name",
         ),
@@ -23,7 +22,6 @@ async def test_login_required_no_user_returns_401(seed, make_client):
 async def test_login_not_required_no_user_succeeds(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
         ),
@@ -45,7 +43,6 @@ async def test_permission_dep_deny(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
@@ -68,7 +65,6 @@ async def test_permission_dep_allow(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             label_field="name",
             permissions=["core:district:view"],
@@ -87,7 +83,6 @@ async def test_company_row_level_filter(seed, make_client):
     user1 = User(id=1, name="Alice", company_id=1)
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             label_field="name",
         ),
@@ -110,7 +105,6 @@ async def test_allowed_users_row_level_filter(seed, make_client):
     user3 = User(id=3, name="Carol", company_id=1)
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=True,
             label_field="name",
         ),

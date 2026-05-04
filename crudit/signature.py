@@ -4,7 +4,7 @@ import inspect
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import Query
+from fastapi import Path, Query
 
 
 def _get_python_type(col: Any) -> type:
@@ -124,6 +124,50 @@ def inject_query_params(
             )
     handler.__signature__ = inspect.Signature(
         base_params + filter_params,
+        return_annotation=existing_sig.return_annotation,
+    )
+
+
+def inject_path_params(
+    handler: Any,
+    path_filters: dict[str, str],
+    model: Any,
+) -> None:
+    """
+    Extend handler.__signature__ with typed path params for each entry in
+    path_filters so they are exposed in the OpenAPI schema.
+
+    The Python type of each param is inferred from the SQLAlchemy column it
+    maps onto. Path params have no default and FastAPI marks them required.
+    The handler must absorb them via **_path_kwargs (the actual value is
+    read from request.path_params at runtime).
+
+    Always normalises the signature by stripping VAR_KEYWORD, so FastAPI
+    does not mistake the absorber for a body/query field even when no path
+    filters are configured.
+    """
+    existing_sig = inspect.signature(handler)
+    base_params = [
+        p
+        for p in existing_sig.parameters.values()
+        if p.kind != inspect.Parameter.VAR_KEYWORD
+    ]
+    existing_names = {p.name for p in base_params}
+    new_params: list[inspect.Parameter] = []
+    for param_name, field_name in (path_filters or {}).items():
+        if param_name in existing_names:
+            continue
+        col = getattr(model, field_name, None)
+        python_type = _get_python_type(col) if col is not None else str
+        new_params.append(
+            inspect.Parameter(
+                name=param_name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=Annotated[python_type, Path()],
+            )
+        )
+    handler.__signature__ = inspect.Signature(
+        base_params + new_params,
         return_annotation=existing_sig.return_annotation,
     )
 

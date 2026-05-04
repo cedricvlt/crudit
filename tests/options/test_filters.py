@@ -9,7 +9,6 @@ from crudit import OptionsConfig
 async def test_filter_by_plain_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             filterable_fields=["is_active"],
@@ -26,7 +25,6 @@ async def test_filter_by_plain_field(seed, make_client):
 async def test_filter_by_nested_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             filterable_fields=["city.name"],
@@ -42,7 +40,6 @@ async def test_filter_by_nested_field(seed, make_client):
 async def test_unknown_filter_returns_400(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             filterable_fields=["name"],
@@ -61,7 +58,6 @@ async def test_custom_filter_fn(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             filterable_fields=["is_active"],
@@ -79,11 +75,11 @@ async def test_custom_filter_fn(seed, make_client):
 async def test_multi_value_filter_as_or(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={},
             login_required=False,
             label_field="name",
             filterable_fields=["company_id"],
-        )
+        ),
+        path_filters=None,
     ) as client:
         r = await client.get("/cities/1/districts?company_id=1&company_id=2")
         assert r.status_code == 200
@@ -96,7 +92,6 @@ async def test_multi_value_filter_as_or(seed, make_client):
 async def test_default_filters(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             default_filters={"is_active": True},
@@ -113,7 +108,6 @@ async def test_default_filters(seed, make_client):
 async def test_year_filter(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={},
             login_required=False,
             label_field="name",
             filterable_fields=["created_at"],

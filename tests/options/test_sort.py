@@ -9,7 +9,6 @@ from crudit import OptionsConfig
 async def test_sort_ascending(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             sortable_fields=["name"],
@@ -25,7 +24,6 @@ async def test_sort_ascending(seed, make_client):
 async def test_sort_descending(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             sortable_fields=["name"],
@@ -41,7 +39,6 @@ async def test_sort_descending(seed, make_client):
 async def test_sort_nested_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             sortable_fields=["city.name", "name"],
@@ -56,7 +53,6 @@ async def test_sort_nested_field(seed, make_client):
 async def test_unknown_sort_field_returns_400(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             sortable_fields=["name"],

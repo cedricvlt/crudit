@@ -9,7 +9,6 @@ from crudit import OptionsConfig
 async def test_search_by_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             search_fields=["name"],
@@ -26,7 +25,6 @@ async def test_search_by_field(seed, make_client):
 async def test_search_no_match(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             search_fields=["name"],
@@ -45,7 +43,6 @@ async def test_custom_search_fn(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             search_fn=my_search,

@@ -11,7 +11,6 @@ SORTABLE = ["name", "is_active", "city.name"]
 async def test_default_sort(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:
@@ -25,7 +24,6 @@ async def test_default_sort(seed, make_client):
 async def test_sort_asc(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             sortable_fields=SORTABLE,
             login_required=False,
         )
@@ -40,7 +38,6 @@ async def test_sort_asc(seed, make_client):
 async def test_sort_desc(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             sortable_fields=SORTABLE,
             login_required=False,
         )
@@ -55,7 +52,6 @@ async def test_sort_desc(seed, make_client):
 async def test_sort_nested(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={},
             sortable_fields=["city.name", "name"],
             login_required=False,
         )
@@ -69,7 +65,6 @@ async def test_sort_nested(seed, make_client):
 async def test_unknown_sort_returns_400(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             sortable_fields=["name"],
             login_required=False,
         )

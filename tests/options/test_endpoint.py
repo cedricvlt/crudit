@@ -14,7 +14,6 @@ from tests.conftest import District
 async def test_response_envelope(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
         )
@@ -33,7 +32,6 @@ async def test_response_envelope(seed, make_client):
 async def test_items_have_id_and_label(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
         )
@@ -52,7 +50,6 @@ async def test_items_have_id_and_label(seed, make_client):
 async def test_path_filter_applied(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
         )
@@ -72,7 +69,6 @@ async def test_path_filter_applied(seed, make_client):
 async def test_label_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
         )
@@ -88,7 +84,6 @@ async def test_label_field(seed, make_client):
 async def test_label_fn(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_fn=lambda row: f"{row.city.name} — {row.name}",
         )
@@ -104,7 +99,6 @@ async def test_label_fn(seed, make_client):
 async def test_label_fn_coerced_to_str(seed, make_client):
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_fn=lambda row: row.id,
         )
@@ -159,7 +153,6 @@ async def test_before_query_hook(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             before_query=before,
@@ -179,7 +172,6 @@ async def test_after_query_hook(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             after_query=after,
@@ -200,7 +192,6 @@ async def test_async_before_query_hook(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             before_query=before,
@@ -217,7 +208,6 @@ async def test_after_query_hook_can_filter(seed, make_client):
 
     async with await make_client(
         OptionsConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             label_field="name",
             after_query=after,

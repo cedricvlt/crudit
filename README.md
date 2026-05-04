@@ -122,9 +122,6 @@ list_endpoint(
     model=District,
     schema=DistrictSchema,
     config=ListConfig(
-        # --- path params ---
-        path_filters={"city_id": "city_id"},  # filter District.city_id == path city_id
-
         # --- auth ---
         login_required=True,
         permissions=["erp:district:view"],
@@ -142,6 +139,7 @@ list_endpoint(
         # --- fastapi ---
         tags=["Districts"],
     ),
+    path_filters={"city_id": "city_id"},   # filter District.city_id == path city_id
     login_dep=get_current_user,            # FastAPI dependency → current_user
     permission_dep=permission_dep,         # plain async callable, wrapped with Depends()
     summary="List districts for a city",
@@ -178,6 +176,9 @@ create_endpoint(
         permissions=["erp:district:edit"],
         tags=["Districts"],
     ),
+    # If you don't need the parent existence/permission check, pass
+    # path_filters={"city_id": "city_id"} instead of parent_params and
+    # drop the city_id field from DistrictCreateSchema.
     login_dep=get_current_user,
     permission_dep=permission_dep,
     summary="Create a district in a city",
@@ -221,11 +222,11 @@ reorder_endpoint(
     path="/cities/{city_id}/districts/reorder",
     model=District,
     config=ReorderConfig(
-        path_filters={"city_id": "city_id"},
         login_required=True,
         permissions=["erp:district:edit"],
         tags=["Districts"],
     ),
+    path_filters={"city_id": "city_id"},
     login_dep=get_current_user,
     permission_dep=permission_dep,
     summary="Reorder districts within a city",
@@ -322,13 +323,40 @@ Valid `extra_endpoints` values: `options`, `reorder`.
 
 ### Top-level auth arguments
 
-`login_dep`, `permission_dep`, and `tags` are declared at the `crud_router` level because they are always the same for every endpoint on a given router:
+`login_dep`, `permission_dep`, `tags`, and `path_filters` are declared at the `crud_router` level because they are always the same for every endpoint on a given router:
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
 | `login_dep` | `Callable \| None` | `None` | FastAPI dependency returning `current_user` |
 | `permission_dep` | `Callable \| None` | `None` | Plain async callable — wrapped with `Depends()` for route-level permission check |
 | `tags` | `list[str] \| None` | `None` | OpenAPI tags applied to all registered routes |
+| `path_filters` | `dict[str, str] \| None` | `None` | URL path param → model field. Forwarded to list, options, reorder, and create endpoints. |
+
+### Nested resources via `path_filters`
+
+For a nested resource like `/cities/{city_id}/districts`, pass `path_filters` once on `crud_router`:
+
+```python
+router = crud_router(
+    model=District,
+    list_item_schema=DistrictSchema,
+    read_schema=DistrictSchema,
+    create_schema=DistrictCreateSchema,
+    update_schema=DistrictUpdateSchema,
+    get_db=get_db,
+    path_filters={"city_id": "city_id"},
+    extra_endpoints=["options", "reorder"],
+    shared=SharedConfig(login_required=False),
+)
+
+app.include_router(router, prefix="/cities/{city_id}/districts")
+```
+
+Behaviour per verb:
+- **list / options**: adds `WHERE city_id = :city_id` to the query.
+- **reorder**: any ID outside the URL scope is treated as not found (404).
+- **create**: drops `city_id` from the request body schema and auto-injects the URL value before the row is persisted.
+- **read / update / delete**: not affected — those verbs identify the row by its own `{id}` and apply row-level permissions instead.
 
 ### SharedConfig
 
@@ -621,17 +649,17 @@ Objects are assigned `sort_order = 0, 1, 2, 3` respectively. An empty `ids` list
 
 ### Path filters
 
-Use `path_filters` to scope the reorder to a nested collection, exactly as in `ListConfig`:
+Use the `path_filters` keyword argument to scope the reorder to a nested
+collection. The same parameter is accepted by `list_endpoint`,
+`options_endpoint`, `create_endpoint`, `reorder_endpoint`, and `crud_router`:
 
 ```python
 reorder_endpoint(
     router=router,
     path="/cities/{city_id}/districts/reorder",
     model=District,
-    config=ReorderConfig(
-        path_filters={"city_id": "city_id"},  # WHERE city_id = :city_id
-        ...
-    ),
+    config=ReorderConfig(...),
+    path_filters={"city_id": "city_id"},  # WHERE city_id = :city_id
     get_db=get_db,
 )
 ```
@@ -973,7 +1001,8 @@ result = await list_service(
     ctx,
     model=District,
     schema=DistrictSchema,
-    config=ListConfig(path_filters={"city_id": "city_id"}, filterable_fields=["name"]),
+    config=ListConfig(filterable_fields=["name"]),
+    path_filters={"city_id": "city_id"},
     q="mont",
     sort="name",
     page=1,
@@ -1021,9 +1050,6 @@ class OptionsConfig:
     label_field: str | None          # model column name used as the label
     label_fn: LabelFn | None         # (row) -> str — callable for computed labels
 
-    # Path parameters
-    path_filters: dict[str, str]     # {"url_param": "model_field"}
-
     # Auth
     login_required: bool             # default True — 401 if no user
     permissions: list[str]           # required permission strings
@@ -1062,6 +1088,7 @@ def options_endpoint(
     model: type[DeclarativeBase],
     config: OptionsConfig,
     *,
+    path_filters: dict[str, str] | None = None,  # {"url_param": "model_field"}
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
     permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
@@ -1082,7 +1109,6 @@ options_endpoint(
     path="/cities/{city_id}/districts/options",
     model=District,
     config=OptionsConfig(
-        path_filters={"city_id": "city_id"},
         login_required=False,
         # Simple column label:
         label_field="name",
@@ -1092,6 +1118,7 @@ options_endpoint(
         search_fields=["name"],
         filterable_fields=["is_active"],
     ),
+    path_filters={"city_id": "city_id"},
     login_dep=get_current_user,
     schema=DistrictSchema,  # needed when label_fn uses row.city
     get_db=get_db,
@@ -1110,9 +1137,6 @@ GET /cities/1/districts/options?q=mont&sort=name&offset=0&limit=
 ```python
 @dataclass
 class ListConfig:
-    # Path parameters
-    path_filters: dict[str, str]        # {"url_param": "model_field"}
-
     # Auth
     login_required: bool                # default True — 401 if no user
     permissions: list[str]              # required permission strings
@@ -1204,6 +1228,7 @@ def list_endpoint(
     schema: type[BaseModel],
     config: ListConfig,
     *,
+    path_filters: dict[str, str] | None = None,  # {"url_param": "model_field"}
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
     permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
@@ -1245,6 +1270,7 @@ def create_endpoint(
     read_schema: type[BaseModel],    # response schema (may include joined relations)
     config: CreateConfig,
     *,
+    path_filters: dict[str, str] | None = None,  # {"url_param": "model_field"}
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
     permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
@@ -1253,6 +1279,8 @@ def create_endpoint(
 ```
 
 Join resolution for `read_schema` runs at **registration time** (once). The primary key is auto-detected from the SQLAlchemy mapper. The `create_schema` is used for OpenAPI request body docs and Pydantic validation.
+
+When `path_filters` is set, each mapped field is **stripped from the request body schema** and auto-injected from the URL path before the row is persisted, so a nested resource can keep using a flat schema. Example: with `path="/cities/{city_id}/districts"`, `path_filters={"city_id": "city_id"}`, the body of `POST /cities/1/districts` is just `{"name": "Belleville"}` and `city_id=1` is set from the URL. Use `path_filters` when you only need scoping; use `parent_params` when you also need the parent's existence and row-level permissions checked.
 
 ---
 
@@ -1346,9 +1374,6 @@ The path must contain `{id}`. The primary key column is auto-detected from the S
 ```python
 @dataclass
 class ReorderConfig:
-    # Path parameters
-    path_filters: dict[str, str]         # {"url_param": "model_field"}
-
     # Auth
     login_required: bool                 # default True — 401 if no user
     permissions: list[str]               # required permission strings
@@ -1373,6 +1398,7 @@ def reorder_endpoint(
     model: type[DeclarativeBase],  # must have a sort_order column
     config: ReorderConfig,
     *,
+    path_filters: dict[str, str] | None = None,  # {"url_param": "model_field"}
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
     permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,

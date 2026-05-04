@@ -46,7 +46,6 @@ def test_offset_mode_takes_priority_when_mixed():
 async def test_has_more_true(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:
@@ -61,7 +60,6 @@ async def test_has_more_true(seed, make_client):
 async def test_has_more_false(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:
@@ -75,7 +73,6 @@ async def test_has_more_false(seed, make_client):
 async def test_count_only(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:

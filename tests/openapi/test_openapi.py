@@ -696,3 +696,207 @@ class TestReorderOpenAPI:
         op = _op(schema, "post", "/items/reorder")
         assert _query_params(op) == set()
         assert _path_params(op) == set()
+
+
+# ---------------------------------------------------------------------------
+# path_filters — LIST and OPTIONS endpoints
+# ---------------------------------------------------------------------------
+
+class TestPathFiltersOpenAPI:
+    """path_filters maps URL path params onto model fields. The path params
+    must appear as required path parameters in the OpenAPI schema and must
+    not leak into the query parameters."""
+
+    def _register_list(self, router: APIRouter) -> None:
+        list_endpoint(
+            router,
+            "/cities/{city_id}/items",
+            _Item,
+            _ItemSchema,
+            ListConfig(
+                filterable_fields=["name"],
+                permissions=_PERMISSIONS,
+            ),
+            path_filters={"city_id": "id"},
+            permission_dep=_require,
+            get_db=_get_db,
+        )
+
+    def _register_options(self, router: APIRouter) -> None:
+        options_endpoint(
+            router,
+            "/cities/{city_id}/items/options",
+            _Item,
+            OptionsConfig(
+                label_field="name",
+                filterable_fields=["name"],
+                permissions=_PERMISSIONS,
+            ),
+            path_filters={"city_id": "id"},
+            permission_dep=_require,
+            get_db=_get_db,
+        )
+
+    # -- list --------------------------------------------------------------
+
+    def test_list_path_param_appears(self):
+        schema = _build_schema(self._register_list)
+        op = _op(schema, "get", "/cities/{city_id}/items")
+        assert "city_id" in _path_params(op)
+
+    def test_list_path_param_is_required(self):
+        schema = _build_schema(self._register_list)
+        op = _op(schema, "get", "/cities/{city_id}/items")
+        param = next(p for p in op["parameters"] if p["name"] == "city_id")
+        assert param["in"] == "path"
+        assert param["required"] is True
+
+    def test_list_path_param_not_in_query(self):
+        schema = _build_schema(self._register_list)
+        op = _op(schema, "get", "/cities/{city_id}/items")
+        assert "city_id" not in _query_params(op)
+
+    def test_list_path_filter_does_not_suppress_other_params(self):
+        """Adding a path filter must not strip the standard list query params."""
+        schema = _build_schema(self._register_list)
+        op = _op(schema, "get", "/cities/{city_id}/items")
+        params = _query_params(op)
+        assert {"page", "itemsPerPage", "offset", "limit", "q", "sort", "countOnly"}.issubset(params)
+        assert "name" in params  # filterable field still exposed
+
+    def test_list_multiple_path_filters_all_appear(self):
+        """When several path params are mapped, each one must appear in the schema."""
+        def register(router):
+            list_endpoint(
+                router,
+                "/companies/{company_id}/cities/{city_id}/items",
+                _Item,
+                _ItemSchema,
+                ListConfig(),
+                path_filters={"company_id": "id", "city_id": "id"},
+                get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/companies/{company_id}/cities/{city_id}/items")
+        path_params = _path_params(op)
+        assert {"company_id", "city_id"}.issubset(path_params)
+        query_params = _query_params(op)
+        assert "company_id" not in query_params
+        assert "city_id" not in query_params
+
+    # -- options -----------------------------------------------------------
+
+    def test_options_path_param_appears(self):
+        schema = _build_schema(self._register_options)
+        op = _op(schema, "get", "/cities/{city_id}/items/options")
+        assert "city_id" in _path_params(op)
+
+    def test_options_path_param_is_required(self):
+        schema = _build_schema(self._register_options)
+        op = _op(schema, "get", "/cities/{city_id}/items/options")
+        param = next(p for p in op["parameters"] if p["name"] == "city_id")
+        assert param["in"] == "path"
+        assert param["required"] is True
+
+    def test_options_path_param_not_in_query(self):
+        schema = _build_schema(self._register_options)
+        op = _op(schema, "get", "/cities/{city_id}/items/options")
+        assert "city_id" not in _query_params(op)
+
+    def test_options_path_filter_does_not_suppress_other_params(self):
+        schema = _build_schema(self._register_options)
+        op = _op(schema, "get", "/cities/{city_id}/items/options")
+        params = _query_params(op)
+        assert {"q", "sort", "offset", "limit"}.issubset(params)
+        assert "name" in params  # filterable field still exposed
+
+    # -- create ------------------------------------------------------------
+
+    def _register_create(self, router: APIRouter, create_schema: type[BaseModel]) -> None:
+        create_endpoint(
+            router,
+            "/cities/{city_id}/items",
+            _Item,
+            create_schema,
+            _ItemSchema,
+            CreateConfig(permissions=_PERMISSIONS),
+            path_filters={"city_id": "id"},
+            permission_dep=_require,
+            get_db=_get_db,
+        )
+
+    def test_create_path_param_appears(self):
+        def register(router):
+            self._register_create(router, _ItemCreateSchema)
+
+        schema = _build_schema(register)
+        op = _op(schema, "post", "/cities/{city_id}/items")
+        assert "city_id" in _path_params(op)
+        param = next(p for p in op["parameters"] if p["name"] == "city_id")
+        assert param["required"] is True
+
+    def test_create_path_param_not_in_query(self):
+        def register(router):
+            self._register_create(router, _ItemCreateSchema)
+
+        schema = _build_schema(register)
+        op = _op(schema, "post", "/cities/{city_id}/items")
+        assert "city_id" not in _query_params(op)
+
+    def test_create_body_schema_excludes_path_filter_field(self):
+        """When a create schema declares the path-filter field, the OpenAPI
+        request body must drop it (the URL provides the value)."""
+
+        class _ItemCreateWithId(BaseModel):
+            name: str
+            id: int  # would normally be the model field set by path_filters
+
+        def register(router):
+            self._register_create(router, _ItemCreateWithId)
+
+        schema = _build_schema(register)
+        op = _op(schema, "post", "/cities/{city_id}/items")
+        body_ref = op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+        body_def = schema["components"]["schemas"][body_ref.split("/")[-1]]
+        properties = body_def.get("properties", {})
+        assert "name" in properties
+        assert "id" not in properties
+        assert "id" not in body_def.get("required", [])
+
+    def test_create_body_schema_unchanged_when_field_absent(self):
+        """If the create schema does not declare the path-filter field, the
+        body schema is left alone."""
+        def register(router):
+            self._register_create(router, _ItemCreateSchema)
+
+        schema = _build_schema(register)
+        op = _op(schema, "post", "/cities/{city_id}/items")
+        body_ref = op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+        body_def = schema["components"]["schemas"][body_ref.split("/")[-1]]
+        assert "name" in body_def["properties"]
+
+    # -- reorder -----------------------------------------------------------
+
+    def _register_reorder(self, router: APIRouter) -> None:
+        reorder_endpoint(
+            router,
+            "/cities/{city_id}/items/reorder",
+            _Item,
+            ReorderConfig(permissions=_PERMISSIONS),
+            path_filters={"city_id": "id"},
+            permission_dep=_require,
+            get_db=_get_db,
+        )
+
+    def test_reorder_path_param_appears(self):
+        schema = _build_schema(self._register_reorder)
+        op = _op(schema, "post", "/cities/{city_id}/items/reorder")
+        assert "city_id" in _path_params(op)
+        param = next(p for p in op["parameters"] if p["name"] == "city_id")
+        assert param["required"] is True
+
+    def test_reorder_path_param_not_in_query(self):
+        schema = _build_schema(self._register_reorder)
+        op = _op(schema, "post", "/cities/{city_id}/items/reorder")
+        assert "city_id" not in _query_params(op)

@@ -23,7 +23,6 @@ FILTERABLE = ["name", "is_active", "created_at", "city.name"]
 async def test_ilike_filter(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             filterable_fields=FILTERABLE,
             login_required=False,
         )
@@ -39,7 +38,6 @@ async def test_ilike_filter(seed, make_client):
 async def test_eq_filter_bool(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             filterable_fields=FILTERABLE,
             login_required=False,
         )
@@ -55,7 +53,6 @@ async def test_nested_filter(seed, make_client):
     # All districts regardless of city, filtered by city.name
     async with await make_client(
         ListConfig(
-            path_filters={},
             filterable_fields=["city.name", "name", "is_active"],
             login_required=False,
         )
@@ -70,7 +67,6 @@ async def test_nested_filter(seed, make_client):
 async def test_unknown_filter_returns_400(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             filterable_fields=["name"],
             login_required=False,
         )
@@ -89,7 +85,6 @@ async def test_custom_filter_fn(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             filterable_fields=["active_only"],
             filter_fns={"active_only": active_only},
             login_required=False,
@@ -105,7 +100,6 @@ async def test_custom_filter_fn(seed, make_client):
 async def test_date_gte_filter(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={},
             filterable_fields=FILTERABLE,
             login_required=False,
         )
@@ -121,7 +115,6 @@ async def test_date_gte_filter(seed, make_client):
 async def test_date_lte_filter(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={},
             filterable_fields=FILTERABLE,
             login_required=False,
         )
@@ -138,7 +131,6 @@ async def test_date_lte_includes_boundary_day(seed, make_client):
     # created_at__lte=2024-01-15 must include Montmartre which has created_at=2024-01-15 00:00:00 UTC
     async with await make_client(
         ListConfig(
-            path_filters={},
             filterable_fields=FILTERABLE,
             login_required=False,
         )
@@ -153,10 +145,10 @@ async def test_date_lte_includes_boundary_day(seed, make_client):
 async def test_multi_value_filter_as_or(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={},
             filterable_fields=["company_id"],
             login_required=False,
-        )
+        ),
+        path_filters=None,
     ) as client:
         r = await client.get("/cities/1/districts?company_id=1&company_id=2")
         assert r.status_code == 200
@@ -170,7 +162,6 @@ async def test_multi_value_filter_as_or(seed, make_client):
 async def test_default_filters(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             default_filters={"is_active": True},
             login_required=False,
         )
@@ -187,7 +178,6 @@ async def test_default_filters(seed, make_client):
 # ---------------------------------------------------------------------------
 
 _DATE_CONFIG = ListConfig(
-    path_filters={},
     filterable_fields=FILTERABLE,
     login_required=False,
 )

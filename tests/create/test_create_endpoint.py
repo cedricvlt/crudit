@@ -360,3 +360,66 @@ async def test_create_without_parent_flat(seed, cleanup_districts, engine):
     assert r.status_code == 201
     assert r.json()["city_id"] == 1
     cleanup_districts.append(r.json()["id"])
+
+
+# ---------------------------------------------------------------------------
+# path_filters — lighter-weight than parent_params
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_with_path_filters_injects_value(
+    seed, make_create_client, cleanup_districts
+):
+    """path_filters should auto-set the model field from the URL param even
+    when the create schema does not include the field."""
+    cfg = CreateConfig(login_required=False)
+    async with await make_create_client(
+        cfg,
+        path_filters={"city_id": "city_id"},
+    ) as client:
+        r = await client.post("/cities/2/districts", json={"name": "Pigalle"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["city_id"] == 2
+    cleanup_districts.append(body["id"])
+
+
+@pytest.mark.asyncio
+async def test_create_with_path_filters_strips_field_from_flat_schema(
+    seed, make_create_client, cleanup_districts
+):
+    """When the create schema declares the path_filter field, the body must
+    not require it — the URL value wins, and a request body that includes it
+    is rejected as an unknown field."""
+    cfg = CreateConfig(login_required=False)
+    async with await make_create_client(
+        cfg,
+        path_filters={"city_id": "city_id"},
+        create_schema=DistrictCreateFlatSchema,
+    ) as client:
+        # Body omits city_id — value is read from the URL.
+        r = await client.post("/cities/1/districts", json={"name": "Belleville"})
+    assert r.status_code == 201
+    assert r.json()["city_id"] == 1
+    cleanup_districts.append(r.json()["id"])
+
+
+@pytest.mark.asyncio
+async def test_create_with_path_filters_url_overrides_body(
+    seed, make_create_client, cleanup_districts
+):
+    """Even if the client sneaks a value into the body, the URL wins and the
+    extra field is ignored (it has been stripped from the body schema)."""
+    cfg = CreateConfig(login_required=False)
+    async with await make_create_client(
+        cfg,
+        path_filters={"city_id": "city_id"},
+        create_schema=DistrictCreateFlatSchema,
+    ) as client:
+        r = await client.post(
+            "/cities/1/districts",
+            json={"name": "Marais 2", "city_id": 2},
+        )
+    assert r.status_code == 201
+    assert r.json()["city_id"] == 1  # URL value, not body value
+    cleanup_districts.append(r.json()["id"])

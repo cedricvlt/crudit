@@ -8,7 +8,6 @@ from crudit import ListConfig
 async def test_search_by_name(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             search_fields=["name"],
             login_required=False,
         )
@@ -24,7 +23,6 @@ async def test_search_by_name(seed, make_client):
 async def test_search_no_match(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             search_fields=["name"],
             login_required=False,
         )
@@ -59,7 +57,6 @@ async def test_custom_search_fn(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             search_fn=custom_search,
             login_required=False,
         )

@@ -196,12 +196,11 @@ async def test_reorder_not_in_allowed_users_wrong_company_returns_403(seed, make
 @pytest.mark.asyncio
 async def test_reorder_path_filter_scopes_query(seed, make_reorder_client, engine):
     # districts 1 and 2 are in city_id=1
-    config = ReorderConfig(
-        login_required=False,
-        path_filters={"city_id": "city_id"},
-    )
+    config = ReorderConfig(login_required=False)
     async with await make_reorder_client(
-        config, path="/cities/{city_id}/districts/reorder"
+        config,
+        path="/cities/{city_id}/districts/reorder",
+        path_filters={"city_id": "city_id"},
     ) as client:
         r = await client.post("/cities/1/districts/reorder", json={"ids": [2, 1]})
     assert r.status_code == 204
@@ -212,12 +211,11 @@ async def test_reorder_path_filter_scopes_query(seed, make_reorder_client, engin
 @pytest.mark.asyncio
 async def test_reorder_path_filter_excludes_other_scope(seed, make_reorder_client):
     # district 3 is in city_id=2, not city_id=1 — should 404
-    config = ReorderConfig(
-        login_required=False,
-        path_filters={"city_id": "city_id"},
-    )
+    config = ReorderConfig(login_required=False)
     async with await make_reorder_client(
-        config, path="/cities/{city_id}/districts/reorder"
+        config,
+        path="/cities/{city_id}/districts/reorder",
+        path_filters={"city_id": "city_id"},
     ) as client:
         r = await client.post("/cities/1/districts/reorder", json={"ids": [1, 3]})
     assert r.status_code == 404

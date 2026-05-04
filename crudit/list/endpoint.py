@@ -15,7 +15,7 @@ from crudit.list.filters import extract_filter_params
 from crudit.list.service import list_service
 from crudit.permissions import apply_permissions  # noqa: F401  (kept for re-export compat)
 from crudit.schemas import PaginatedResponse
-from crudit.signature import inject_query_params
+from crudit.signature import inject_path_params, inject_query_params
 from crudit.types import PermissionDepFn
 from crudit.utils import bind_perms, get_error_responses, user_dep_or_none
 
@@ -27,6 +27,7 @@ def list_endpoint(
     schema: type[BaseModel],
     config: ListConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -39,6 +40,7 @@ def list_endpoint(
     resolution and config validation happen here (once), not per-request.
     """
     join_info = resolve_joins(model, schema)
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -68,6 +70,7 @@ def list_endpoint(
             model=model,
             schema=schema,
             config=config,
+            path_filters=_path_filters,
             join_info=join_info,
             q=q,
             sort=sort,
@@ -83,6 +86,7 @@ def list_endpoint(
         return result
 
     inject_query_params(_handler, config.filterable_fields, model, join_info.joined_models)
+    inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
     deps = list(config.dependencies)

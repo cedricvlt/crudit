@@ -30,6 +30,7 @@ async def list_service(
     model: type[DeclarativeBase],
     schema: type[BaseModel],
     config: ListConfig,
+    path_filters: dict[str, str] | None = None,
     q: str | None = None,
     sort: str | None = None,
     page: int | None = None,
@@ -58,7 +59,7 @@ async def list_service(
         filter_params = {}
 
     query = select(model)
-    query = apply_path_filters(query, model, config.path_filters, ctx.path_params)
+    query = apply_path_filters(query, model, path_filters or {}, ctx.path_params)
     query = apply_default_filters(query, model, config.default_filters)
     query = apply_permissions(query, model, ctx.user, config.login_required)
 

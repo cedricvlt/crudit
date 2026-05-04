@@ -8,7 +8,6 @@ from crudit import ListConfig
 async def test_basic_list_returns_envelope(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:
@@ -26,7 +25,6 @@ async def test_basic_list_returns_envelope(seed, make_client):
 async def test_path_filter_applied(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:
@@ -49,7 +47,6 @@ async def test_before_query_hook(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             before_query=before,
         )
@@ -68,7 +65,6 @@ async def test_after_query_hook(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             after_query=after,
         )
@@ -92,7 +88,6 @@ async def test_async_hooks(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
             before_query=before,
             after_query=after,
@@ -106,7 +101,6 @@ async def test_async_hooks(seed, make_client):
 async def test_response_schema_fields(seed, make_client):
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:

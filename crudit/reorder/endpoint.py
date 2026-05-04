@@ -12,6 +12,7 @@ from crudit.list.filters import apply_path_filters
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import _detect_pk_field
 from crudit.reorder.config import ReorderConfig
+from crudit.signature import inject_path_params
 from crudit.types import PermissionDepFn
 from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
 
@@ -28,6 +29,7 @@ def reorder_endpoint(
     model: type[DeclarativeBase],
     config: ReorderConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -52,6 +54,7 @@ def reorder_endpoint(
     _model = model
     _config = config
     _pk_field = pk_field
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -61,6 +64,7 @@ def reorder_endpoint(
         body: _ReorderBody,
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
+        **_path_kwargs,  # absorbs path-filter params injected via __signature__
     ) -> Response:
         # 1. Login check
         check_route_permissions(current_user, _config.login_required)
@@ -74,7 +78,7 @@ def reorder_endpoint(
         path_params = dict(request.path_params)
 
         query = select(_model).where(pk_col.in_(body.ids))
-        query = apply_path_filters(query, _model, _config.path_filters, path_params)
+        query = apply_path_filters(query, _model, _path_filters, path_params)
 
         if load_allowed_users:
             query = query.options(selectinload(getattr(_model, "allowed_users")))
@@ -118,6 +122,8 @@ def reorder_endpoint(
             await call_hook(_config.after_reorder, ordered_objects, request, current_user)
 
         return Response(status_code=204)
+
+    inject_path_params(_handler, _path_filters, _model)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

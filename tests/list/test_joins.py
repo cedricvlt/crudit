@@ -115,7 +115,6 @@ async def test_joined_data_in_response(seed, make_client):
 
     async with await make_client(
         ListConfig(
-            path_filters={"city_id": "city_id"},
             login_required=False,
         )
     ) as client:

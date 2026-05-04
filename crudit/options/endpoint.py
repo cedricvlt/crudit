@@ -24,7 +24,7 @@ from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OffsetPaginatedResponse, OptionItem
-from crudit.signature import inject_query_params
+from crudit.signature import inject_path_params, inject_query_params
 from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
 
 
@@ -38,6 +38,7 @@ def options_endpoint(
     model: type[DeclarativeBase],
     config: OptionsConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -67,6 +68,7 @@ def options_endpoint(
     _model = model
     _config = config
     _join_info = join_info
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -91,7 +93,7 @@ def options_endpoint(
         )
 
         query = select(_model)
-        query = apply_path_filters(query, _model, _config.path_filters, path_params)
+        query = apply_path_filters(query, _model, _path_filters, path_params)
         query = apply_default_filters(query, _model, _config.default_filters)
         query = apply_permissions(
             query,
@@ -163,6 +165,7 @@ def options_endpoint(
         )
 
     inject_query_params(_handler, _config.filterable_fields, _model, _join_info.joined_models)
+    inject_path_params(_handler, _path_filters, _model)
 
     model_name = model.__name__
     deps = list(_config.dependencies)

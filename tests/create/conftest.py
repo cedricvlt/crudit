@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from pydantic import BaseModel
+
 from crudit import CreateConfig, create_endpoint
 from tests.conftest import District, DistrictCreateSchema, DistrictSchema
 
@@ -18,6 +20,8 @@ def make_create_app(
     current_user: Any = None,
     path: str = "/cities/{city_id}/districts",
     permission_dep: Any = None,
+    path_filters: dict[str, str] | None = None,
+    create_schema: type[BaseModel] = DistrictCreateSchema,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -33,9 +37,10 @@ def make_create_app(
         router=app.router,
         path=path,
         model=District,
-        create_schema=DistrictCreateSchema,
+        create_schema=create_schema,
         read_schema=DistrictSchema,
         config=config,
+        path_filters=path_filters,
         login_dep=get_current_user,
         permission_dep=permission_dep,
         get_db=get_db,
@@ -50,8 +55,12 @@ def make_create_client(engine):
         current_user: Any = None,
         path: str = "/cities/{city_id}/districts",
         permission_dep: Any = None,
+        path_filters: dict[str, str] | None = None,
+        create_schema: type[BaseModel] = DistrictCreateSchema,
     ) -> AsyncClient:
-        app = make_create_app(engine, config, current_user, path, permission_dep)
+        app = make_create_app(
+            engine, config, current_user, path, permission_dep, path_filters, create_schema
+        )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make
