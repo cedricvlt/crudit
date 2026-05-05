@@ -68,6 +68,8 @@ def m2m_router(
     """
     cfg = config or M2MConfig()
 
+    _login_codes = (401,) if (cfg.login_required and login_dep is not None) else ()
+
     parent_fk_col, child_fk_col = _resolve_association_columns(
         association_table, parent_model, child_model
     )
@@ -198,7 +200,7 @@ def m2m_router(
         methods=["GET"],
         response_model=list[child_schema],
         dependencies=resolved_deps,
-        responses=get_error_responses(401, 403, 404),
+        responses=get_error_responses(*_login_codes, 403, 404),
         name=f"{model_name.lower()}_m2m_list",
         description=f"List {child_model.__name__} items linked to a {parent_model.__name__}.",
     )
@@ -209,7 +211,7 @@ def m2m_router(
         methods=["POST"],
         response_model=list[child_schema],
         dependencies=resolved_deps,
-        responses=get_error_responses(401, 403, 404, 422),
+        responses=get_error_responses(*_login_codes, 403, 404, 422),
         name=f"{model_name.lower()}_m2m_add",
         description=f"Add {child_model.__name__} items to a {parent_model.__name__}. Idempotent.",
     )
@@ -220,7 +222,7 @@ def m2m_router(
         methods=["DELETE"],
         status_code=204,
         dependencies=resolved_deps,
-        responses=get_error_responses(401, 403, 404),
+        responses=get_error_responses(*_login_codes, 403, 404),
         name=f"{model_name.lower()}_m2m_remove",
         description=f"Remove {child_model.__name__} items from a {parent_model.__name__}. Idempotent.",
     )

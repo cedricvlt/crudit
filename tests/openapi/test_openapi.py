@@ -900,3 +900,249 @@ class TestPathFiltersOpenAPI:
         schema = _build_schema(self._register_reorder)
         op = _op(schema, "post", "/cities/{city_id}/items/reorder")
         assert "city_id" not in _query_params(op)
+
+
+# ---------------------------------------------------------------------------
+# 401 response — declared whenever login_dep is provided
+# ---------------------------------------------------------------------------
+
+
+async def _login_dep() -> None:
+    pass  # pragma: no cover
+
+
+def _routes_with_login(register_with_login: bool):
+    """Register every endpoint with or without login_dep and return its op dict."""
+    login = _login_dep if register_with_login else None
+
+    def register(router):
+        list_endpoint(
+            router,
+            "/items",
+            _Item,
+            _ItemSchema,
+            ListConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        read_endpoint(
+            router,
+            "/items/{id}",
+            _Item,
+            _ItemSchema,
+            ReadConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        create_endpoint(
+            router,
+            "/items",
+            _Item,
+            _ItemCreateSchema,
+            _ItemSchema,
+            CreateConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        update_endpoint(
+            router,
+            "/items/{id}",
+            _Item,
+            _ItemCreateSchema,
+            _ItemSchema,
+            UpdateConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        delete_endpoint(
+            router,
+            "/items/{id}",
+            _Item,
+            DeleteConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        options_endpoint(
+            router,
+            "/items/options",
+            _Item,
+            OptionsConfig(label_field="name"),
+            login_dep=login,
+            get_db=_get_db,
+        )
+        reorder_endpoint(
+            router,
+            "/items/reorder",
+            _Item,
+            ReorderConfig(),
+            login_dep=login,
+            get_db=_get_db,
+        )
+
+    return _build_schema(register)
+
+
+_OPS = [
+    ("get", "/items"),
+    ("get", "/items/{id}"),
+    ("post", "/items"),
+    ("patch", "/items/{id}"),
+    ("delete", "/items/{id}"),
+    ("get", "/items/options"),
+    ("post", "/items/reorder"),
+]
+
+
+class TestLogin401Response:
+    """When login_dep is supplied, every endpoint must declare a 401 response;
+    when login_dep is omitted, 401 must not appear (the dep cannot raise it)."""
+
+    def test_401_present_on_each_endpoint_when_login_dep_set(self):
+        schema = _routes_with_login(register_with_login=True)
+        for method, path in _OPS:
+            op = _op(schema, method, path)
+            assert "401" in op["responses"], f"{method.upper()} {path} missing 401"
+
+    def test_401_absent_on_each_endpoint_when_no_login_dep(self):
+        schema = _routes_with_login(register_with_login=False)
+        for method, path in _OPS:
+            op = _op(schema, method, path)
+            assert "401" not in op["responses"], (
+                f"{method.upper()} {path} unexpectedly declares 401 without login_dep"
+            )
+
+    def test_401_description_is_unauthorized(self):
+        schema = _routes_with_login(register_with_login=True)
+        for method, path in _OPS:
+            op = _op(schema, method, path)
+            assert op["responses"]["401"]["description"] == "Unauthorized"
+
+
+# ---------------------------------------------------------------------------
+# 401 response — crud_router propagation
+# ---------------------------------------------------------------------------
+
+
+class TestCrudRouter401Response:
+    """crud_router forwards login_dep to every endpoint factory; 401 should
+    surface on every registered route when login_dep is set."""
+
+    def _build(self, *, with_login: bool) -> dict:
+        from crudit.router import crud_router
+
+        login = _login_dep if with_login else None
+        router = crud_router(
+            model=_Item,
+            list_item_schema=_ItemSchema,
+            read_schema=_ItemSchema,
+            create_schema=_ItemCreateSchema,
+            update_schema=_ItemCreateSchema,
+            get_db=_get_db,
+            login_dep=login,
+            extra_endpoints=["options", "reorder"],
+        )
+        app = FastAPI()
+        app.include_router(router, prefix="/items")
+        return app.openapi()
+
+    def test_crud_router_declares_401_when_login_dep_set(self):
+        schema = self._build(with_login=True)
+        for method, path in [
+            ("get", "/items"),
+            ("post", "/items"),
+            ("get", "/items/options"),
+            ("post", "/items/reorder"),
+            ("get", "/items/{id}"),
+            ("patch", "/items/{id}"),
+            ("delete", "/items/{id}"),
+        ]:
+            op = _op(schema, method, path)
+            assert "401" in op["responses"], f"{method.upper()} {path} missing 401"
+
+    def test_crud_router_omits_401_when_no_login_dep(self):
+        schema = self._build(with_login=False)
+        for method, path in [
+            ("get", "/items"),
+            ("post", "/items"),
+            ("get", "/items/options"),
+            ("post", "/items/reorder"),
+            ("get", "/items/{id}"),
+            ("patch", "/items/{id}"),
+            ("delete", "/items/{id}"),
+        ]:
+            op = _op(schema, method, path)
+            assert "401" not in op["responses"], (
+                f"{method.upper()} {path} unexpectedly declares 401 without login_dep"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 401 response — m2m_router
+# ---------------------------------------------------------------------------
+
+
+class TestM2M401Response:
+    """The m2m endpoints (list/add/remove) declare 401 only when both
+    login_required is True and login_dep is provided."""
+
+    def _build(self, *, login_dep, login_required: bool) -> dict:
+        from sqlalchemy import Column, ForeignKey, Integer, Table
+
+        from crudit.m2m.config import M2MConfig
+        from crudit.m2m.endpoint import m2m_router
+
+        class _Base2(DeclarativeBase):
+            pass
+
+        class _Parent(_Base2):
+            __tablename__ = "m2m_parent"
+            id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+        class _Child(_Base2):
+            __tablename__ = "m2m_child"
+            id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+        assoc = Table(
+            "m2m_assoc",
+            _Base2.metadata,
+            Column("parent_id", Integer, ForeignKey("m2m_parent.id"), primary_key=True),
+            Column("child_id", Integer, ForeignKey("m2m_child.id"), primary_key=True),
+        )
+
+        class _ChildSchema(BaseModel):
+            id: int
+
+        router = m2m_router(
+            parent_model=_Parent,
+            child_model=_Child,
+            association_table=assoc,
+            child_schema=_ChildSchema,
+            prefix="/parents",
+            get_db=_get_db,
+            config=M2MConfig(login_required=login_required),
+            login_dep=login_dep,
+        )
+        app = FastAPI()
+        app.include_router(router)
+        return app.openapi()
+
+    def test_m2m_declares_401_when_login_dep_and_login_required(self):
+        schema = self._build(login_dep=_login_dep, login_required=True)
+        path = "/parents/{parent_id}/_childs"
+        for method in ("get", "post", "delete"):
+            op = _op(schema, method, path)
+            assert "401" in op["responses"], f"{method.upper()} {path} missing 401"
+
+    def test_m2m_omits_401_when_no_login_dep(self):
+        schema = self._build(login_dep=None, login_required=True)
+        path = "/parents/{parent_id}/_childs"
+        for method in ("get", "post", "delete"):
+            op = _op(schema, method, path)
+            assert "401" not in op["responses"]
+
+    def test_m2m_omits_401_when_login_not_required(self):
+        schema = self._build(login_dep=_login_dep, login_required=False)
+        path = "/parents/{parent_id}/_childs"
+        for method in ("get", "post", "delete"):
+            op = _op(schema, method, path)
+            assert "401" not in op["responses"]

@@ -101,5 +101,5 @@ def list_endpoint(
         tags=config.tags or None,
         summary=summary or f"List {model_name} rows from the database.",
         dependencies=deps,
-        responses=get_error_responses(403),
+        responses=get_error_responses(*([401] if login_dep else []), 403),
     )

@@ -152,5 +152,5 @@ def update_endpoint(
         tags=_config.tags or None,
         summary=summary or f"Update an existing {model_name} row in the database.",
         dependencies=deps,
-        responses=get_error_responses(400, 403, 404),
+        responses=get_error_responses(400, *([401] if login_dep else []), 403, 404),
     )

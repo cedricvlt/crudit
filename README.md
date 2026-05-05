@@ -832,6 +832,19 @@ Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must 
 
 All filter params — including operator-suffixed variants — are fully typed in the OpenAPI schema based on the SQLAlchemy column type. For example, `age__gte` is documented as `integer`, `created_at__lte` as `date`, and `name__isnull` as `boolean`. This means Swagger UI and generated clients show the correct input types with no extra configuration.
 
+### OpenAPI error responses
+
+Each endpoint declares the error responses it can return so they show up in Swagger UI and generated clients:
+
+| Endpoint | Error responses |
+|---|---|
+| list / options | 403 (+ 401 if `login_dep` is set) |
+| read / update / delete / create | 400, 403, 404 (+ 401 if `login_dep` is set), 422 for create/update body validation |
+| reorder | 403, 404 (+ 401 if `login_dep` is set) |
+| m2m list / add / remove | 403, 404, 422 on add (+ 401 when both `login_required=True` and `login_dep` is set) |
+
+`401` is added automatically whenever `login_dep` is provided, since the dependency itself can raise `HTTPException(401)` regardless of the per-route `login_required` flag.
+
 ### Date period filters
 
 Five additional operators collapse an entire time period into a `>= start AND < end` range. They work on both `date` and `datetime` columns (datetime columns use UTC-aware bounds automatically).

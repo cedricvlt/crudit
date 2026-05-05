@@ -138,5 +138,5 @@ def reorder_endpoint(
         tags=_config.tags or None,
         summary=summary or f"Reorder {model_name} rows by providing an ordered list of IDs.",
         dependencies=deps,
-        responses=get_error_responses(403, 404),
+        responses=get_error_responses(*([401] if login_dep else []), 403, 404),
     )

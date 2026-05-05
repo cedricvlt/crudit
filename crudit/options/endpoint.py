@@ -180,7 +180,7 @@ def options_endpoint(
         tags=_config.tags or None,
         summary=summary or f"List {model_name} option items for selection.",
         dependencies=deps,
-        responses=get_error_responses(403),
+        responses=get_error_responses(*([401] if login_dep else []), 403),
     )
 
 
