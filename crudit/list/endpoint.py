@@ -17,7 +17,7 @@ from crudit.permissions import apply_permissions  # noqa: F401  (kept for re-exp
 from crudit.schemas import PaginatedResponse
 from crudit.signature import inject_path_params, inject_query_params
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses, user_dep_or_none
+from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
 
 def list_endpoint(
@@ -31,6 +31,7 @@ def list_endpoint(
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
+    operation_id: str | None = None,
     get_db: Callable,
 ) -> None:
     """Register a paginated list GET endpoint on `router`.
@@ -92,6 +93,7 @@ def list_endpoint(
     deps = list(config.dependencies)
     if permission_dep is not None:
         deps.append(Depends(bind_perms(permission_dep, config.permissions)))
+    op_id = operation_id or config.operation_id or f"list_{model_snake_name(model)}"
     router.add_api_route(
         path,
         _handler,
@@ -100,6 +102,7 @@ def list_endpoint(
         response_model_by_alias=True,
         tags=config.tags or None,
         summary=summary or f"List {model_name} rows from the database.",
+        operation_id=op_id,
         dependencies=deps,
         responses=get_error_responses(*([401] if login_dep else []), 403),
     )

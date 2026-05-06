@@ -25,7 +25,7 @@ from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
 from crudit.schemas import OffsetPaginatedResponse, OptionItem
 from crudit.signature import inject_path_params, inject_query_params
-from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
+from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
 
 
 class _DefaultOptionSchema(BaseModel):
@@ -42,6 +42,7 @@ def options_endpoint(
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
+    operation_id: str | None = None,
     schema: type[BaseModel] = _DefaultOptionSchema,
     get_db: Callable,
 ) -> None:
@@ -171,6 +172,7 @@ def options_endpoint(
     deps = list(_config.dependencies)
     if permission_dep is not None:
         deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
+    op_id = operation_id or _config.operation_id or f"list_{model_snake_name(model)}_options"
     router.add_api_route(
         path,
         _handler,
@@ -179,6 +181,7 @@ def options_endpoint(
         response_model_by_alias=True,
         tags=_config.tags or None,
         summary=summary or f"List {model_name} option items for selection.",
+        operation_id=op_id,
         dependencies=deps,
         responses=get_error_responses(*([401] if login_dep else []), 403),
     )

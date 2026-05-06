@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from crudit.m2m.config import M2MConfig
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses
+from crudit.utils import bind_perms, get_error_responses, model_snake_name
 
 
 class M2MIdsBody(BaseModel):
@@ -87,6 +87,10 @@ def m2m_router(
 
     resolved_deps = [Depends(d) if not isinstance(d, DependsType) else d for d in extra_deps]
     model_name = f"{parent_model.__name__}{child_model.__name__}"
+    op_id_base = f"{model_snake_name(parent_model)}_{model_snake_name(child_model)}"
+    list_op_id = cfg.list_operation_id or f"list_{op_id_base}"
+    add_op_id = cfg.add_operation_id or f"add_{op_id_base}"
+    remove_op_id = cfg.remove_operation_id or f"remove_{op_id_base}"
 
     db_dep = Depends(get_db)
 
@@ -202,6 +206,7 @@ def m2m_router(
         dependencies=resolved_deps,
         responses=get_error_responses(*_login_codes, 403, 404),
         name=f"{model_name.lower()}_m2m_list",
+        operation_id=list_op_id,
         description=f"List {child_model.__name__} items linked to a {parent_model.__name__}.",
     )
 
@@ -213,6 +218,7 @@ def m2m_router(
         dependencies=resolved_deps,
         responses=get_error_responses(*_login_codes, 403, 404, 422),
         name=f"{model_name.lower()}_m2m_add",
+        operation_id=add_op_id,
         description=f"Add {child_model.__name__} items to a {parent_model.__name__}. Idempotent.",
     )
 
@@ -224,6 +230,7 @@ def m2m_router(
         dependencies=resolved_deps,
         responses=get_error_responses(*_login_codes, 403, 404),
         name=f"{model_name.lower()}_m2m_remove",
+        operation_id=remove_op_id,
         description=f"Remove {child_model.__name__} items from a {parent_model.__name__}. Idempotent.",
     )
 

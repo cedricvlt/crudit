@@ -2,9 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from typing import Any, Callable
 
 from fastapi import Depends
+
+
+def model_snake_name(model: type) -> str:
+    """Convert a model class name to snake_case, e.g. ``CompanyUser`` → ``company_user``."""
+    name = model.__name__.strip("_")
+    name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    return name.lower()
 
 
 async def _no_user() -> None:

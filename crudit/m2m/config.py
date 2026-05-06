@@ -13,3 +13,6 @@ class M2MConfig:
     dependencies: list[Any] = field(default_factory=list)
     login_required: bool = True
     permissions: list[str] = field(default_factory=list)
+    list_operation_id: str | None = None
+    add_operation_id: str | None = None
+    remove_operation_id: str | None = None

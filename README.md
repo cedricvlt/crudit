@@ -405,6 +405,43 @@ router = crud_router(
 - `reorder` requires the model to have a `sort_order` column.
 - Paths are always relative to the router prefix set in `app.include_router(..., prefix=...)`.
 
+### OpenAPI `operation_id`
+
+Every endpoint registers a stable, predictable `operation_id` derived from the verb and the model class name in `snake_case`. The default scheme is:
+
+| Verb | Default `operation_id` |
+|---|---|
+| list | `list_<model>` |
+| read | `read_<model>` |
+| create | `create_<model>` |
+| update | `update_<model>` |
+| delete | `delete_<model>` |
+| options | `list_<model>_options` |
+| reorder | `reorder_<model>` |
+| m2m list / add / remove | `list_<parent>_<child>` / `add_<parent>_<child>` / `remove_<parent>_<child>` |
+
+So for `class CompanyUser(...)` the list endpoint gets `list_company_user`. This makes generated client SDKs (e.g. `openapi-typescript-codegen`, `openapi-generator`) emit nice, deterministic method names instead of the long auto-generated FastAPI defaults.
+
+Override the default in two ways:
+
+```python
+# 1. via the per-endpoint kwarg (highest priority)
+list_endpoint(
+    router, "/items", Item, ItemSchema, ListConfig(),
+    operation_id="search_items",
+    get_db=get_db,
+)
+
+# 2. via the per-verb Config
+list_endpoint(
+    router, "/items", Item, ItemSchema,
+    ListConfig(operation_id="search_items"),
+    get_db=get_db,
+)
+```
+
+The `operation_id` keyword wins over the value declared on the config; both win over the auto-generated default. For `m2m_router`, set `M2MConfig.list_operation_id`, `add_operation_id`, and `remove_operation_id` to override per sub-endpoint.
+
 ---
 
 ## Create endpoint

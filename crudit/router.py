@@ -140,8 +140,6 @@ def crud_router(
 
     if "list" in active:
         list_cfg = list or _from_shared(ListConfig, shared, **_shared_kwargs)
-        if model.__name__ == "ExternalResource":
-            print(list_cfg)
         list_endpoint(router, "", model, list_item_schema, list_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "create" in active:

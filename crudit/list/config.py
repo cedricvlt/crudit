@@ -33,3 +33,4 @@ class ListConfig:
     # FastAPI
     dependencies: list[Any] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    operation_id: str | None = None

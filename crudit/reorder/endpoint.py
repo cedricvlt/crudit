@@ -14,7 +14,7 @@ from crudit.read.endpoint import _detect_pk_field
 from crudit.reorder.config import ReorderConfig
 from crudit.signature import inject_path_params
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, call_hook, get_error_responses, user_dep_or_none
+from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
 
 _ORDER_FIELD = "sort_order"
 
@@ -33,6 +33,7 @@ def reorder_endpoint(
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
+    operation_id: str | None = None,
     get_db: Callable,
 ) -> None:
     """
@@ -129,6 +130,7 @@ def reorder_endpoint(
     deps = list(_config.dependencies)
     if permission_dep is not None:
         deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
+    op_id = operation_id or _config.operation_id or f"reorder_{model_snake_name(model)}"
     router.add_api_route(
         path,
         _handler,
@@ -137,6 +139,7 @@ def reorder_endpoint(
         response_class=Response,
         tags=_config.tags or None,
         summary=summary or f"Reorder {model_name} rows by providing an ordered list of IDs.",
+        operation_id=op_id,
         dependencies=deps,
         responses=get_error_responses(*([401] if login_dep else []), 403, 404),
     )

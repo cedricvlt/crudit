@@ -15,7 +15,7 @@ from crudit.read.config import ReadConfig
 from crudit.read.service import detect_pk_field, read_service
 from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses, user_dep_or_none
+from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
 # Backwards-compatible alias — other endpoint modules still import this name.
 _detect_pk_field = detect_pk_field
@@ -31,6 +31,7 @@ def read_endpoint(
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
+    operation_id: str | None = None,
     get_db: Callable,
 ) -> None:
     """Register a single-object GET endpoint on `router`.
@@ -77,6 +78,7 @@ def read_endpoint(
     deps = list(config.dependencies)
     if permission_dep is not None:
         deps.append(Depends(bind_perms(permission_dep, config.permissions)))
+    op_id = operation_id or config.operation_id or f"read_{model_snake_name(model)}"
     router.add_api_route(
         path,
         _handler,
@@ -84,6 +86,7 @@ def read_endpoint(
         response_model=schema,
         tags=config.tags or None,
         summary=summary or f"Retrieve a single {model_name} row from the database.",
+        operation_id=op_id,
         dependencies=deps,
         responses=get_error_responses(400, *([401] if login_dep else []), 403, 404),
     )

@@ -1146,3 +1146,186 @@ class TestM2M401Response:
         for method in ("get", "post", "delete"):
             op = _op(schema, method, path)
             assert "401" not in op["responses"]
+
+
+# ---------------------------------------------------------------------------
+# operation_id — auto-generated from verb + model name, overridable
+# ---------------------------------------------------------------------------
+
+
+class TestOperationIdDefaults:
+    """Each endpoint derives a sensible default operation_id from the model name."""
+
+    def test_list_default_operation_id(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(), get_db=_get_db)
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items")["operationId"] == "list_item"
+
+    def test_read_default_operation_id(self):
+        def register(router):
+            read_endpoint(router, "/items/{id}", _Item, _ItemSchema, ReadConfig(), get_db=_get_db)
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items/{id}")["operationId"] == "read_item"
+
+    def test_create_default_operation_id(self):
+        def register(router):
+            create_endpoint(
+                router, "/items", _Item, _ItemCreateSchema, _ItemSchema,
+                CreateConfig(), get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "post", "/items")["operationId"] == "create_item"
+
+    def test_update_default_operation_id(self):
+        def register(router):
+            update_endpoint(
+                router, "/items/{id}", _Item, _ItemCreateSchema, _ItemSchema,
+                UpdateConfig(), get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "patch", "/items/{id}")["operationId"] == "update_item"
+
+    def test_delete_default_operation_id(self):
+        def register(router):
+            delete_endpoint(router, "/items/{id}", _Item, DeleteConfig(), get_db=_get_db)
+
+        schema = _build_schema(register)
+        assert _op(schema, "delete", "/items/{id}")["operationId"] == "delete_item"
+
+    def test_options_default_operation_id(self):
+        def register(router):
+            options_endpoint(
+                router, "/items/options", _Item,
+                OptionsConfig(label_field="name"), get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items/options")["operationId"] == "list_item_options"
+
+    def test_reorder_default_operation_id(self):
+        def register(router):
+            reorder_endpoint(router, "/items/reorder", _Item, ReorderConfig(), get_db=_get_db)
+
+        schema = _build_schema(register)
+        assert _op(schema, "post", "/items/reorder")["operationId"] == "reorder_item"
+
+    def test_camelcase_model_name_is_snake_cased(self):
+        """A multi-word model class name like ``CompanyUser`` becomes ``company_user``."""
+
+        class CompanyUser(_Base):
+            __tablename__ = "company_users_op_id"
+            id: Mapped[int] = mapped_column(Integer, primary_key=True)
+            name: Mapped[str] = mapped_column(String)
+
+        class _CompanyUserSchema(BaseModel):
+            id: int
+            name: str
+
+        def register(router):
+            list_endpoint(router, "/cus", CompanyUser, _CompanyUserSchema, ListConfig(), get_db=_get_db)
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/cus")["operationId"] == "list_company_user"
+
+
+class TestOperationIdOverride:
+    """The operation_id can be overridden either via the keyword arg or via the config."""
+
+    def test_kwarg_override_wins_over_default(self):
+        def register(router):
+            list_endpoint(
+                router, "/items", _Item, _ItemSchema, ListConfig(),
+                operation_id="custom_list_items", get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items")["operationId"] == "custom_list_items"
+
+    def test_config_field_override_wins_over_default(self):
+        def register(router):
+            list_endpoint(
+                router, "/items", _Item, _ItemSchema,
+                ListConfig(operation_id="from_config"), get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items")["operationId"] == "from_config"
+
+    def test_kwarg_takes_precedence_over_config(self):
+        def register(router):
+            list_endpoint(
+                router, "/items", _Item, _ItemSchema,
+                ListConfig(operation_id="from_config"),
+                operation_id="from_kwarg",
+                get_db=_get_db,
+            )
+
+        schema = _build_schema(register)
+        assert _op(schema, "get", "/items")["operationId"] == "from_kwarg"
+
+
+class TestM2MOperationId:
+    """m2m endpoints derive list/add/remove operation_ids from parent + child names."""
+
+    def _build(self, *, config_kwargs: dict | None = None) -> dict:
+        from sqlalchemy import Column, ForeignKey, Integer, Table
+
+        from crudit.m2m.config import M2MConfig
+        from crudit.m2m.endpoint import m2m_router
+
+        class _Base3(DeclarativeBase):
+            pass
+
+        class _User(_Base3):
+            __tablename__ = "m2m_op_user"
+            id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+        class _Permission(_Base3):
+            __tablename__ = "m2m_op_perm"
+            id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+        assoc = Table(
+            "m2m_op_assoc",
+            _Base3.metadata,
+            Column("user_id", Integer, ForeignKey("m2m_op_user.id"), primary_key=True),
+            Column("permission_id", Integer, ForeignKey("m2m_op_perm.id"), primary_key=True),
+        )
+
+        class _PermSchema(BaseModel):
+            id: int
+
+        router = m2m_router(
+            parent_model=_User,
+            child_model=_Permission,
+            association_table=assoc,
+            child_schema=_PermSchema,
+            prefix="/users",
+            get_db=_get_db,
+            config=M2MConfig(**(config_kwargs or {})),
+        )
+        app = FastAPI()
+        app.include_router(router)
+        return app.openapi()
+
+    def test_default_list_add_remove_operation_ids(self):
+        schema = self._build()
+        path = "/users/{user_id}/_permissions"
+        assert _op(schema, "get", path)["operationId"] == "list_user_permission"
+        assert _op(schema, "post", path)["operationId"] == "add_user_permission"
+        assert _op(schema, "delete", path)["operationId"] == "remove_user_permission"
+
+    def test_overrides_apply(self):
+        schema = self._build(config_kwargs={
+            "list_operation_id": "my_list",
+            "add_operation_id": "my_add",
+            "remove_operation_id": "my_remove",
+        })
+        path = "/users/{user_id}/_permissions"
+        assert _op(schema, "get", path)["operationId"] == "my_list"
+        assert _op(schema, "post", path)["operationId"] == "my_add"
+        assert _op(schema, "delete", path)["operationId"] == "my_remove"
