@@ -6,6 +6,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
@@ -14,6 +15,7 @@ from crudit.permissions import check_object_permissions, check_route_permissions
 from crudit.read.endpoint import _detect_pk_field
 from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
+from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
 from crudit.update.config import UpdateConfig
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
 
@@ -46,6 +48,7 @@ def update_endpoint(
         has_allowed_users_relationship(model)
         and "allowed_users" not in join_info.joined_models
     )
+    unique_specs = detect_unique_constraints(model)
 
     _model = model
     _update_schema = update_schema
@@ -53,6 +56,7 @@ def update_endpoint(
     _config = config
     _join_info = join_info
     _pk_field = pk_field
+    _unique_specs = unique_specs
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -115,15 +119,31 @@ def update_endpoint(
         if _config.before_update is not None:
             patch_data = await call_hook(_config.before_update, obj, patch_data, request, current_user)
 
-        # 9. Apply patch to ORM object
+        # 9. Pre-flight unique constraint check using the post-patch values.
+        # We check before mutating `obj` so the SELECT's implicit autoflush
+        # doesn't try to push the dirty row into the DB and raise IntegrityError
+        # itself.
+        if _unique_specs:
+            values = {c.key: getattr(obj, c.key) for c in mapper.columns}
+            values.update(patch_data)
+            await check_unique_constraints(
+                db, _model, _unique_specs, values,
+                exclude_pk=(_pk_field, id),
+            )
+
+        # 10. Apply patch to ORM object
         for attr, value in patch_data.items():
             setattr(obj, attr, value)
 
-        # 10. Persist
+        # 11. Persist
         db.add(obj)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as err:
+            await db.rollback()
+            raise integrity_error_to_http(err, _unique_specs)
 
-        # 11. Reload with eager-loaded relationships from read_schema
+        # 12. Reload with eager-loaded relationships from read_schema
         reload_q = select(_model).where(pk_col == id)
         reload_options = _join_info.eager_load_options(_model, set())
         if reload_options:
@@ -131,7 +151,7 @@ def update_endpoint(
         result = await db.execute(reload_q)
         obj = result.scalars().unique().one()
 
-        # 12. after_update hook
+        # 13. after_update hook
         if _config.after_update is not None:
             obj = await call_hook(_config.after_update, obj, request, current_user)
 

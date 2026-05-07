@@ -762,7 +762,7 @@ Status codes:
 - **401** — `login_required=True` and no authenticated user
 - **403** — user authenticated but fails route-level or parent row-level permission check
 - **404** — a declared parent object was not found
-- **422** — request body failed schema validation
+- **422** — request body failed schema validation, or unique constraint violation (see [Unique constraints](#unique-constraints))
 
 ---
 
@@ -779,7 +779,7 @@ Status codes:
 - **401** — `login_required=True` and no authenticated user
 - **403** — user authenticated but fails route-level or row-level permission check
 - **404** — no object with that primary key exists
-- **422** — request body failed schema validation
+- **422** — request body failed schema validation, or unique constraint violation (see [Unique constraints](#unique-constraints))
 
 ---
 
@@ -947,6 +947,53 @@ The enforcement mechanism differs by endpoint:
 | `read_endpoint` | Python check after fetch — returns **403** if the object exists but is inaccessible |
 
 For `read_endpoint`, `allowed_users` is always `selectinload`-ed (even if absent from the response schema) so the membership check always has the data it needs.
+
+---
+
+## Unique constraints
+
+`create_endpoint` and `update_endpoint` automatically detect unique constraints declared on the SQLAlchemy model and validate every write against them. **No configuration is required** — the model is the source of truth.
+
+Three definition styles are recognised:
+
+```python
+class Tag(Base):
+    __tablename__ = "tags"
+    __table_args__ = (
+        # 2. Composite UniqueConstraint
+        UniqueConstraint("city_id", "name", name="uq_tag_city_name"),
+        # 3. Unique Index
+        Index("ix_tag_code_unique", "code", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # 1. Column-level unique=True
+    slug: Mapped[str] = mapped_column(String(100), unique=True)
+    code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
+```
+
+A pre-flight `SELECT` runs before the row is persisted; if a conflict is detected, the request fails with **422 Unprocessable Entity** and a structured detail naming the offending fields:
+
+```json
+{
+  "detail": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "fields": {
+      "city_id": ["Already exists"],
+      "name": ["Already exists"]
+    }
+  }
+}
+```
+
+For `update_endpoint`, the row being updated is excluded from the check so a no-op PATCH (re-sending a row's existing values) doesn't false-positive against itself. The check uses the *post-patch* values.
+
+**NULL semantics.** If any column in a unique spec has the value `None`, that spec is skipped — matching SQL's rule that NULLs do not conflict with each other.
+
+**Race-safety.** The `commit()` is also wrapped with an `IntegrityError` catch, so a concurrent insert that sneaks past the pre-flight still surfaces as 422 (rather than 500).
 
 ---
 

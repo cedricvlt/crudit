@@ -6,6 +6,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import inspect as sa_inspect, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
@@ -15,6 +16,7 @@ from crudit.permissions import check_object_permissions, check_route_permissions
 from crudit.types import PermissionDepFn
 from crudit.read.endpoint import _detect_pk_field
 from crudit.signature import inject_path_params, patch_param_annotation
+from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
 
 
@@ -74,6 +76,7 @@ def create_endpoint(
     pk_field = _detect_pk_field(model)
     _path_filters: dict[str, str] = path_filters or {}
     _body_schema = _strip_path_filter_fields(create_schema, _path_filters)
+    unique_specs = detect_unique_constraints(model)
 
     _model = model
     _create_schema = _body_schema
@@ -81,6 +84,7 @@ def create_endpoint(
     _config = config
     _join_info = join_info
     _pk_field = pk_field
+    _unique_specs = unique_specs
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -162,11 +166,19 @@ def create_endpoint(
         if _config.before_create is not None:
             obj = await call_hook(_config.before_create, obj, request, current_user)
 
-        # 9. Persist
-        db.add(obj)
-        await db.commit()
+        # 9. Pre-flight unique constraint check
+        if _unique_specs:
+            await check_unique_constraints(db, _model, _unique_specs, vars(obj))
 
-        # 10. Reload with eager-loaded relationships from read_schema
+        # 10. Persist
+        db.add(obj)
+        try:
+            await db.commit()
+        except IntegrityError as err:
+            await db.rollback()
+            raise integrity_error_to_http(err, _unique_specs)
+
+        # 11. Reload with eager-loaded relationships from read_schema
         pk_col = getattr(_model, _pk_field)
         pk_value = getattr(obj, _pk_field)
         reload_q = select(_model).where(pk_col == pk_value)
@@ -176,7 +188,7 @@ def create_endpoint(
         result = await db.execute(reload_q)
         obj = result.scalars().unique().one()
 
-        # 11. after_create hook
+        # 12. after_create hook
         if _config.after_create is not None:
             obj = await call_hook(_config.after_create, obj, request, current_user)
 

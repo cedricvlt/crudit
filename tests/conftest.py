@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest_asyncio
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Table, UniqueConstraint
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -77,6 +77,28 @@ class District(Base):
     allowed_users: Mapped[list[User]] = relationship(
         "User", secondary=district_allowed_users
     )
+
+    _order_fields = ("name",)
+
+
+class Tag(Base):
+    """Test model exercising all three unique-constraint styles:
+    - column-level unique=True on `slug`
+    - composite UniqueConstraint on (city_id, name)
+    - unique Index on `code` (nullable, to test NULL semantics)
+    """
+
+    __tablename__ = "tags"
+    __table_args__ = (
+        UniqueConstraint("city_id", "name", name="uq_tag_city_name"),
+        Index("ix_tag_code_unique", "code", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    slug: Mapped[str] = mapped_column(String(100), unique=True)
+    code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
 
     _order_fields = ("name",)
 
@@ -179,3 +201,25 @@ class DistrictCreateFlatSchema(BaseModel):
 class DistrictUpdateSchema(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+
+
+class TagSchema(BaseModel):
+    id: int
+    name: str
+    slug: str
+    code: str | None = None
+    city_id: int
+
+
+class TagCreateSchema(BaseModel):
+    name: str
+    slug: str
+    code: str | None = None
+    city_id: int
+
+
+class TagUpdateSchema(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+    code: str | None = None
+    city_id: int | None = None
