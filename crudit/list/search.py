@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudit.joins import resolve_nested_column
+from crudit.joins import JoinInfo, resolve_nested_column
 from crudit.types import SearchFn
 
 
@@ -14,7 +14,7 @@ def apply_search(
     query: Select,
     q: str | None,
     model: type[DeclarativeBase],
-    joined_models: dict[str, type],
+    join_info: JoinInfo,
     search_fields: list[str],
     search_fn: SearchFn | None,
     current_user: Any,
@@ -30,7 +30,7 @@ def apply_search(
 
     conditions = []
     for field_path in search_fields:
-        col = resolve_nested_column(field_path, model, joined_models)
+        col = resolve_nested_column(field_path, model, join_info)
         conditions.append(col.ilike(f"%{q}%"))
 
     return query.where(or_(*conditions))

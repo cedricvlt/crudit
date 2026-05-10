@@ -6,18 +6,18 @@ from fastapi import HTTPException
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select, nulls_last
 
-from crudit.joins import resolve_nested_column
+from crudit.joins import JoinInfo, resolve_nested_column
 
 
 def apply_sort(
     query: Select,
     sort_param: str | None,
     model: type[DeclarativeBase],
-    joined_models: dict[str, type],
+    join_info: JoinInfo,
     sortable_fields: list[str],
 ) -> Select:
     if sort_param:
-        order_clauses = _parse_sort(sort_param, model, joined_models, sortable_fields)
+        order_clauses = _parse_sort(sort_param, model, join_info, sortable_fields)
     else:
         order_clauses = _default_sort(model)
 
@@ -27,7 +27,7 @@ def apply_sort(
 def _parse_sort(
     sort_param: str,
     model: type[DeclarativeBase],
-    joined_models: dict[str, type],
+    join_info: JoinInfo,
     sortable_fields: list[str],
 ) -> list[Any]:
     clauses = []
@@ -44,7 +44,7 @@ def _parse_sort(
                 detail=f"Field '{field_path}' is not sortable.",
             )
 
-        col = resolve_nested_column(field_path, model, joined_models)
+        col = resolve_nested_column(field_path, model, join_info)
         clause = nulls_last(col.desc() if descending else col.asc())
         clauses.append(clause)
 

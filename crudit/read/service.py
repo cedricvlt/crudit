@@ -54,7 +54,7 @@ async def read_service(
 
     load_allowed_users = (
         has_allowed_users_relationship(model)
-        and "allowed_users" not in join_info.joined_models
+        and "allowed_users" not in join_info.nodes
     )
 
     pk_col = getattr(model, pk_field)

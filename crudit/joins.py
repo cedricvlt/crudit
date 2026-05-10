@@ -8,68 +8,213 @@ from pydantic import BaseModel
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, contains_eager, joinedload, selectinload
 from sqlalchemy.orm.strategy_options import _AbstractLoad
+from sqlalchemy.sql import Select
 
 from crudit.exceptions import CruditConfigError
 
 
 @dataclass
+class JoinNode:
+    """One relationship in the resolved join tree.
+
+    `model` is the related SQLAlchemy class. `is_collection` is True for
+    o2m relationships (loaded via selectinload). `children` holds further
+    relationships discovered on the nested Pydantic schema.
+    """
+    rel_name: str
+    model: type
+    is_collection: bool
+    children: dict[str, "JoinNode"] = field(default_factory=dict)
+
+
+@dataclass
 class JoinInfo:
-    # relationship name → related SQLAlchemy model class
-    joined_models: dict[str, type] = field(default_factory=dict)
-    # m2o/o2o: can be explicitly joined for filter/sort
-    m2o_rels: set[str] = field(default_factory=set)
-    # o2m: loaded via selectin, cannot be joined for filter/sort
-    o2m_rels: set[str] = field(default_factory=set)
+    # Top-level relationships keyed by name; nested relationships live in
+    # JoinNode.children. The tree mirrors the nested structure of the
+    # Pydantic schema passed to resolve_joins().
+    nodes: dict[str, JoinNode] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # Tree walking helpers
+    # ------------------------------------------------------------------
+
+    def find_node(self, path: str) -> JoinNode | None:
+        """Return the JoinNode at a dotted path (e.g. "city.country") or None."""
+        nodes = self.nodes
+        node: JoinNode | None = None
+        for part in path.split("."):
+            node = nodes.get(part)
+            if node is None:
+                return None
+            nodes = node.children
+        return node
+
+    def is_m2o_chain(self, rel_path: str) -> bool:
+        """True if every segment in the dotted path is a m2o relationship.
+
+        Only m2o chains can be JOINed for filter/sort/search — joining an
+        o2m would multiply rows.
+        """
+        nodes = self.nodes
+        for part in rel_path.split("."):
+            node = nodes.get(part)
+            if node is None or node.is_collection:
+                return False
+            nodes = node.children
+        return True
+
+    def parent_model_for(self, root_model: type, rel_path: str) -> type:
+        """Return the model class that owns the *last* segment of `rel_path`.
+
+        For "city.country", returns the City model (parent of `country`).
+        Raises KeyError if the path is not in the tree.
+        """
+        parts = rel_path.split(".")
+        nodes = self.nodes
+        parent_model: type = root_model
+        for rel_name in parts[:-1]:
+            node = nodes[rel_name]
+            parent_model = node.model
+            nodes = node.children
+        if parts[-1] not in nodes:
+            raise KeyError(rel_path)
+        return parent_model
+
+    # ------------------------------------------------------------------
+    # Per-request join application
+    # ------------------------------------------------------------------
+
+    def apply_explicit_joins(
+        self,
+        query: Select,
+        root_model: type,
+        explicitly_joined: set[str],
+    ) -> Select:
+        """Add chained outer JOINs to `query` for each path in `explicitly_joined`.
+
+        Paths are sorted by depth so parents are joined before children.
+        """
+        for join_path in sorted(explicitly_joined, key=lambda p: p.count(".")):
+            parent_model = self.parent_model_for(root_model, join_path)
+            rel_attr = getattr(parent_model, join_path.rsplit(".", 1)[-1])
+            query = query.join(rel_attr, isouter=True)
+        return query
+
+    # ------------------------------------------------------------------
+    # Eager loading
+    # ------------------------------------------------------------------
+
+    def eager_load_options(
+        self,
+        model: type,
+        explicitly_joined: set[str],
+    ) -> list[_AbstractLoad]:
+        """Build chained eager-load options for the whole join tree.
+
+        For each leaf in the tree, emit one chained Load option that walks
+        from the root to the leaf. Intermediate m2o segments use
+        `contains_eager` when explicitly joined (so the loaded JOIN is
+        consumed) and `joinedload` otherwise. o2m segments always use
+        `selectinload`.
+        """
+        options: list[_AbstractLoad] = []
+        for rel_name, node in self.nodes.items():
+            self._collect_options(model, node, rel_name, explicitly_joined, None, options)
+        return options
+
+    def _collect_options(
+        self,
+        parent_model: type,
+        node: JoinNode,
+        path: str,
+        explicitly_joined: set[str],
+        base_opt: _AbstractLoad | None,
+        options: list[_AbstractLoad],
+    ) -> None:
+        rel_attr = getattr(parent_model, node.rel_name)
+        opt = self._step_load(base_opt, rel_attr, node.is_collection, path, explicitly_joined)
+
+        if not node.children:
+            options.append(opt)
+            return
+
+        for child_name, child_node in node.children.items():
+            child_path = f"{path}.{child_name}"
+            self._collect_options(
+                node.model, child_node, child_path, explicitly_joined, opt, options
+            )
+
+    @staticmethod
+    def _step_load(
+        base_opt: _AbstractLoad | None,
+        rel_attr: Any,
+        is_collection: bool,
+        path: str,
+        explicitly_joined: set[str],
+    ) -> _AbstractLoad:
+        if is_collection:
+            return base_opt.selectinload(rel_attr) if base_opt else selectinload(rel_attr)
+        if path in explicitly_joined:
+            return base_opt.contains_eager(rel_attr) if base_opt else contains_eager(rel_attr)
+        return base_opt.joinedload(rel_attr) if base_opt else joinedload(rel_attr)
+
+    # ------------------------------------------------------------------
+    # Post-load: sort o2m collections by their _order_fields
+    # ------------------------------------------------------------------
 
     def sort_o2m_collections(self, rows: list) -> None:
+        """Sort each loaded o2m collection (at any depth) by `_order_fields`.
+
+        Mutates rows in-place. Null values sort last and never compare
+        against non-null values of mixed types.
         """
-        Sort each o2m collection on loaded ORM rows by the related model's
-        _order_fields (if defined). Mutates rows in-place. Null values are
-        sorted last and never compared against non-null values of mixed types.
-        """
-        for rel_name in self.o2m_rels:
-            rel_model = self.joined_models[rel_name]
-            order_fields: tuple[str, ...] = getattr(rel_model, "_order_fields", ())
-            if not order_fields:
+        for row in rows:
+            self._sort_recursive(row, self.nodes)
+
+    def _sort_recursive(self, obj: Any, nodes: dict[str, JoinNode]) -> None:
+        if obj is None:
+            return
+        for rel_name, node in nodes.items():
+            attr = getattr(obj, rel_name, None)
+            if attr is None:
                 continue
-            for row in rows:
-                collection = getattr(row, rel_name, None)
-                if collection is not None:
-                    collection.sort(key=lambda obj: tuple(
-                        ((v := getattr(obj, f, None)) is None, v)
+            if node.is_collection:
+                order_fields: tuple[str, ...] = getattr(node.model, "_order_fields", ())
+                if order_fields:
+                    attr.sort(key=lambda o: tuple(
+                        ((v := getattr(o, f, None)) is None, v)
                         for f in order_fields
                     ))
-
-    def eager_load_options(self, model: type, explicitly_joined: set[str]) -> list[_AbstractLoad]:
-        """
-        Build eager-load options given which relationships were explicitly joined
-        in the query (those get contains_eager; others get joinedload/selectinload).
-        """
-        options = []
-        for rel_name, rel_model in self.joined_models.items():
-            rel_attr = getattr(model, rel_name)
-            if rel_name in self.o2m_rels:
-                options.append(selectinload(rel_attr))
-            elif rel_name in explicitly_joined:
-                options.append(contains_eager(rel_attr))
+                if node.children:
+                    for item in attr:
+                        self._sort_recursive(item, node.children)
             else:
-                options.append(joinedload(rel_attr))
-        return options
+                if node.children:
+                    self._sort_recursive(attr, node.children)
 
 
 def resolve_joins(model: type[DeclarativeBase], schema: type[BaseModel]) -> JoinInfo:
-    """
-    Inspect the Pydantic schema for nested BaseModel fields and match them to
-    SQLAlchemy relationships. Called once at route registration time.
+    """Inspect the Pydantic schema for nested BaseModel fields and match them
+    to SQLAlchemy relationships, recursing into nested schemas to build a
+    full join tree. Called once at route registration time.
     """
     info = JoinInfo()
+    _populate_nodes(model, schema, info.nodes)
+    return info
+
+
+def _populate_nodes(
+    model: type,
+    schema: type[BaseModel],
+    nodes: dict[str, JoinNode],
+) -> None:
     mapper = sa_inspect(model)
     relationship_map = {r.key: r for r in mapper.relationships}
 
     for field_name, field_info in schema.model_fields.items():
         annotation = field_info.annotation
-        rel_model, is_list = _extract_nested_model(annotation)
-        if rel_model is None:
+        rel_schema, is_list = _extract_nested_model(annotation)
+        if rel_schema is None:
             continue
 
         if field_name not in relationship_map:
@@ -81,14 +226,10 @@ def resolve_joins(model: type[DeclarativeBase], schema: type[BaseModel]) -> Join
 
         rel = relationship_map[field_name]
         related_class = rel.mapper.class_
-        info.joined_models[field_name] = related_class
 
-        if is_list:
-            info.o2m_rels.add(field_name)
-        else:
-            info.m2o_rels.add(field_name)
-
-    return info
+        node = JoinNode(rel_name=field_name, model=related_class, is_collection=is_list)
+        _populate_nodes(related_class, rel_schema, node.children)
+        nodes[field_name] = node
 
 
 def collect_needed_joins(
@@ -97,37 +238,45 @@ def collect_needed_joins(
     join_info: JoinInfo,
     search_fields: list[str] | None = None,
 ) -> set[str]:
-    """
-    Scan filter keys and sort param to find which m2o relationships need an
-    explicit JOIN added to the query for WHERE / ORDER BY to work.
+    """Scan filter keys, sort param, and search fields to find which m2o
+    relationship paths need explicit JOINs added to the query.
+
+    Returns a set of dotted relationship paths (every prefix on the chain),
+    e.g. {"city", "city.country"} for a filter on "city.country.name".
+    Paths whose chain includes an o2m segment are skipped — they cannot be
+    used for filter/sort/search and `resolve_nested_column` will raise.
     """
     from crudit.list.filters import _RESERVED_PARAMS, _parse_key
 
     needed: set[str] = set()
 
+    def add_field_path(field_path: str) -> None:
+        if "." not in field_path:
+            return
+        rel_parts = field_path.split(".")[:-1]
+        nodes = join_info.nodes
+        prefix = ""
+        for rel_name in rel_parts:
+            node = nodes.get(rel_name)
+            if node is None or node.is_collection:
+                return
+            prefix = f"{prefix}.{rel_name}" if prefix else rel_name
+            needed.add(prefix)
+            nodes = node.children
+
     for raw_key in filter_params:
         if raw_key in _RESERVED_PARAMS:
             continue
         field_path, _ = _parse_key(raw_key)
-        if "." in field_path:
-            rel_name = field_path.split(".")[0]
-            if rel_name in join_info.m2o_rels:
-                needed.add(rel_name)
+        add_field_path(field_path)
 
     if sort_param:
         for part in sort_param.split(","):
-            field_path = part.strip().lstrip("-")
-            if "." in field_path:
-                rel_name = field_path.split(".")[0]
-                if rel_name in join_info.m2o_rels:
-                    needed.add(rel_name)
+            add_field_path(part.strip().lstrip("-"))
 
     if search_fields:
         for field_path in search_fields:
-            if "." in field_path:
-                rel_name = field_path.split(".")[0]
-                if rel_name in join_info.m2o_rels:
-                    needed.add(rel_name)
+            add_field_path(field_path)
 
     return needed
 
@@ -135,28 +284,43 @@ def collect_needed_joins(
 def resolve_nested_column(
     field_path: str,
     model: type[DeclarativeBase],
-    joined_models: dict[str, type],
+    join_info: JoinInfo,
 ) -> Any:
+    """Resolve an arbitrary-depth dotted path like "city.country.name" to a
+    SQLAlchemy column.
+
+    Every intermediate segment must be a joined m2o relationship.
     """
-    Resolve a dot-notation field path like "city.name" to a SQLAlchemy column.
-    """
-    parts = field_path.split(".", 1)
+    parts = field_path.split(".")
     if len(parts) == 1:
         col = getattr(model, parts[0], None)
         if col is None:
             raise ValueError(f"Field '{parts[0]}' not found on {model.__name__}.")
         return col
 
-    rel_name, col_name = parts
-    if rel_name not in joined_models:
-        raise ValueError(
-            f"Relationship '{rel_name}' is not joined. "
-            "Only fields from joined relationships can be used for nested filter/sort."
-        )
-    related_model = joined_models[rel_name]
-    col = getattr(related_model, col_name, None)
+    *rel_parts, col_name = parts
+    nodes = join_info.nodes
+    current_model: type = model
+    walked = ""
+    for rel_name in rel_parts:
+        walked = f"{walked}.{rel_name}" if walked else rel_name
+        node = nodes.get(rel_name)
+        if node is None:
+            raise ValueError(
+                f"Relationship '{walked}' is not joined. "
+                "Only fields from joined relationships can be used for nested filter/sort."
+            )
+        if node.is_collection:
+            raise ValueError(
+                f"Cannot use '{field_path}' for filter/sort/search: "
+                f"'{walked}' is a collection (o2m) relationship."
+            )
+        current_model = node.model
+        nodes = node.children
+
+    col = getattr(current_model, col_name, None)
     if col is None:
-        raise ValueError(f"Field '{col_name}' not found on {related_model.__name__}.")
+        raise ValueError(f"Field '{col_name}' not found on {current_model.__name__}.")
     return col
 
 

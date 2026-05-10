@@ -102,28 +102,26 @@ def options_endpoint(
             current_user,
             _config.login_required,
         )
+        explicitly_joined: set[str] = collect_needed_joins(
+            filter_params, sort, _join_info, _config.search_fields
+        )
+        query = _join_info.apply_explicit_joins(query, _model, explicitly_joined)
+
         query = apply_search(
             query,
             q,
             _model,
-            _join_info.joined_models,
+            _join_info,
             _config.search_fields,
             _config.search_fn,
             current_user,
         )
 
-        explicitly_joined: set[str] = collect_needed_joins(
-            filter_params, sort, _join_info
-        )
-        for rel_name in explicitly_joined:
-            rel_attr = getattr(_model, rel_name)
-            query = query.join(rel_attr, isouter=True)
-
         query = apply_filters(
             query,
             filter_params,
             _model,
-            _join_info.joined_models,
+            _join_info,
             _config.filterable_fields,
             _config.filter_fns,
             current_user,
@@ -140,7 +138,7 @@ def options_endpoint(
             query,
             sort,
             _model,
-            _join_info.joined_models,
+            _join_info,
             _config.sortable_fields,
         )
 
@@ -165,7 +163,7 @@ def options_endpoint(
             has_more=(pagination.sql_offset + pagination.sql_limit) < total_count,
         )
 
-    inject_query_params(_handler, _config.filterable_fields, _model, _join_info.joined_models)
+    inject_query_params(_handler, _config.filterable_fields, _model, _join_info)
     inject_path_params(_handler, _path_filters, _model)
 
     model_name = model.__name__

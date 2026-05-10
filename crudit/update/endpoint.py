@@ -46,7 +46,7 @@ def update_endpoint(
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
     load_allowed_users = (
         has_allowed_users_relationship(model)
-        and "allowed_users" not in join_info.joined_models
+        and "allowed_users" not in join_info.nodes
     )
     unique_specs = detect_unique_constraints(model)
 

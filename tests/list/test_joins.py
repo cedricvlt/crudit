@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crudit import ListConfig, list_endpoint
 from crudit.exceptions import CruditConfigError
-from crudit.joins import JoinInfo, resolve_joins
+from crudit.joins import JoinInfo, JoinNode, resolve_joins
 from tests.conftest import City, District
 
 
@@ -40,14 +40,14 @@ class DistrictNoJoin(BaseModel):
 
 def test_detects_m2o_join():
     info = resolve_joins(District, DistrictWithCity)
-    assert "city" in info.joined_models
-    assert "city" in info.m2o_rels
+    assert "city" in info.nodes
+    assert info.nodes["city"].is_collection is False
     assert len(info.eager_load_options(District, set())) == 1
 
 
 def test_no_nested_schema_no_joins():
     info = resolve_joins(District, DistrictNoJoin)
-    assert info.joined_models == {}
+    assert info.nodes == {}
     assert info.eager_load_options(District, set()) == []
 
 
@@ -113,7 +113,7 @@ def test_sort_o2m_collections_puts_nulls_last():
             self.items = items
 
     parent = Parent([Item("b"), Item(None), Item("a"), Item(None)])
-    info = JoinInfo(joined_models={"items": Item}, o2m_rels={"items"})
+    info = JoinInfo(nodes={"items": JoinNode("items", Item, is_collection=True)})
 
     info.sort_o2m_collections([parent])
 
@@ -140,7 +140,7 @@ def test_sort_o2m_collections_multi_field_nulls_last():
         Item("x", None),
         Item("x", "a"),
     ])
-    info = JoinInfo(joined_models={"items": Item}, o2m_rels={"items"})
+    info = JoinInfo(nodes={"items": JoinNode("items", Item, is_collection=True)})
 
     info.sort_o2m_collections([parent])
 

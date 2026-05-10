@@ -47,12 +47,27 @@ class User(Base):
     _order_fields = ("name",)
 
 
+class Country(Base):
+    __tablename__ = "countries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+    cities: Mapped[list["City"]] = relationship(
+        "City", back_populates="country"
+    )
+
+    _order_fields = ("name",)
+
+
 class City(Base):
     __tablename__ = "cities"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"), nullable=True)
 
+    country: Mapped[Country | None] = relationship("Country", back_populates="cities")
     districts: Mapped[list["District"]] = relationship("District", back_populates="city")
 
     _order_fields = ("name",)
@@ -140,8 +155,11 @@ async def seed(db_session: AsyncSession):
     user2 = User(id=2, name="Bob", company_id=2)
     user3 = User(id=3, name="Carol", company_id=1)
 
-    city1 = City(id=1, name="Paris")
-    city2 = City(id=2, name="London")
+    country1 = Country(id=1, name="France")
+    country2 = Country(id=2, name="UK")
+
+    city1 = City(id=1, name="Paris", country_id=1)
+    city2 = City(id=2, name="London", country_id=2)
 
     d1 = District(id=1, name="Montmartre", city_id=1, company_id=1, is_active=True,
                   created_at=datetime(2024, 1, 15, tzinfo=timezone.utc))
@@ -153,14 +171,19 @@ async def seed(db_session: AsyncSession):
     # district 1 allows user3 explicitly (different company)
     d1.allowed_users.append(user3)
 
-    db_session.add_all([company1, company2, user1, user2, user3, city1, city2, d1, d2, d3, d4])
+    db_session.add_all([
+        company1, company2, user1, user2, user3,
+        country1, country2, city1, city2, d1, d2, d3, d4,
+    ])
     await db_session.commit()
 
     yield {"companies": [company1, company2], "users": [user1, user2, user3],
+           "countries": [country1, country2],
            "cities": [city1, city2], "districts": [d1, d2, d3, d4]}
 
     # Cleanup
-    for obj in [d1, d2, d3, d4, city1, city2, user1, user2, user3, company1, company2]:
+    for obj in [d1, d2, d3, d4, city1, city2, country1, country2,
+                user1, user2, user3, company1, company2]:
         await db_session.delete(obj)
     await db_session.commit()
 

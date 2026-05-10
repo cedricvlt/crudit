@@ -21,7 +21,7 @@ def _get_python_type(col: Any) -> type:
 def _make_filter_params(
     field: str,
     model: Any,
-    joined_models: dict[str, type],
+    join_info: Any,
 ) -> list[inspect.Parameter]:
     """
     Build typed inspect.Parameters for a filterable field and all its operators.
@@ -33,7 +33,7 @@ def _make_filter_params(
     from crudit.joins import resolve_nested_column
 
     try:
-        col = resolve_nested_column(field, model, joined_models)
+        col = resolve_nested_column(field, model, join_info)
         python_type = _get_python_type(col)
     except Exception:
         python_type = str
@@ -82,12 +82,12 @@ def inject_query_params(
     handler: Any,
     filterable_fields: list[str],
     model: Any = None,
-    joined_models: dict[str, type] | None = None,
+    join_info: Any = None,
 ) -> None:
     """
     Extend handler.__signature__ with typed query params for each filterable field.
 
-    When model and joined_models are provided, each param is typed from the
+    When model and join_info are provided, each param is typed from the
     SQLAlchemy column type and operator-suffixed variants are also injected
     (e.g. name__ilike, age__gte) so they appear in the OpenAPI schema.
 
@@ -97,6 +97,8 @@ def inject_query_params(
     The handler must declare **_filter_kwargs to absorb the injected values
     (filtering reads request.query_params directly, not these params).
     """
+    from crudit.joins import JoinInfo
+
     existing_sig = inspect.signature(handler)
     base_params = [
         p
@@ -106,7 +108,7 @@ def inject_query_params(
     filter_params: list[inspect.Parameter] = []
     for field in filterable_fields:
         if model is not None:
-            filter_params.extend(_make_filter_params(field, model, joined_models or {}))
+            filter_params.extend(_make_filter_params(field, model, join_info or JoinInfo()))
         else:
             if "." in field:
                 param_name = field.replace(".", "__")

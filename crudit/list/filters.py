@@ -8,7 +8,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 
-from crudit.joins import resolve_nested_column
+from crudit.joins import JoinInfo, resolve_nested_column
 from crudit.types import FilterFn
 
 
@@ -58,7 +58,7 @@ def apply_filters(
     query: Select,
     raw_params: dict[str, list[str]],
     model: type[DeclarativeBase],
-    joined_models: dict[str, type],
+    join_info: JoinInfo,
     filterable_fields: list[str],
     filter_fns: dict[str, FilterFn],
     current_user: Any,
@@ -80,7 +80,7 @@ def apply_filters(
             query = filter_fns[field_path](query, raw_values[0], current_user)
             continue
 
-        col = resolve_nested_column(field_path, model, joined_models)
+        col = resolve_nested_column(field_path, model, join_info)
         if len(raw_values) == 1:
             query = query.where(_build_expression(col, operator, raw_values[0]))
         else:

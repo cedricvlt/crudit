@@ -907,7 +907,9 @@ crudit inspects the Pydantic `schema` at registration time. Any field annotated 
 - `field: RelatedSchema` → **many-to-one / one-to-one** → `joinedload`
 - `field: list[RelatedSchema]` → **one-to-many** → `selectinload` (avoids cartesian products with pagination)
 
-Nested fields (e.g. `city.name`) in `filterable_fields` or `sortable_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship.
+Detection **recurses into nested schemas**, so a chain like `District → City → Country` is loaded with a single chained `joinedload(District.city).joinedload(City.country)` — no manual eager-loading config needed.
+
+Nested fields (e.g. `city.name`) in `filterable_fields`, `sortable_fields` or `search_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship. Multi-level paths like `city.country.name` are supported too — every prefix on the chain is JOINed in order and `contains_eager` is chained accordingly. Every intermediate segment must be a m2o relationship (joining through an o2m would multiply rows); a path that crosses a `list[…]` field is rejected with a `ValueError`.
 
 ---
 

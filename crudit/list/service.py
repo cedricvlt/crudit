@@ -66,15 +66,13 @@ async def list_service(
     explicitly_joined: set[str] = collect_needed_joins(
         filter_params, sort, join_info, config.search_fields
     )
-    for rel_name in explicitly_joined:
-        rel_attr = getattr(model, rel_name)
-        query = query.join(rel_attr, isouter=True)
+    query = join_info.apply_explicit_joins(query, model, explicitly_joined)
 
     query = apply_search(
         query,
         q,
         model,
-        join_info.joined_models,
+        join_info,
         config.search_fields,
         config.search_fn,
         ctx.user,
@@ -84,7 +82,7 @@ async def list_service(
         query,
         filter_params,
         model,
-        join_info.joined_models,
+        join_info,
         config.filterable_fields,
         config.filter_fns,
         ctx.user,
@@ -100,7 +98,7 @@ async def list_service(
     if count_only:
         return total_count
 
-    query = apply_sort(query, sort, model, join_info.joined_models, config.sortable_fields)
+    query = apply_sort(query, sort, model, join_info, config.sortable_fields)
 
     pagination = resolve_pagination(page, items_per_page, offset, limit)
     query = apply_pagination(query, pagination)

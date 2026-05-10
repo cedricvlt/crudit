@@ -86,7 +86,7 @@ def list_endpoint(
             return JSONResponse({"totalCount": result})
         return result
 
-    inject_query_params(_handler, config.filterable_fields, model, join_info.joined_models)
+    inject_query_params(_handler, config.filterable_fields, model, join_info)
     inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
