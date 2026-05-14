@@ -156,7 +156,13 @@ async def test_update_sets_updated_by(seed, make_update_client):
     async with await make_update_client(config, current_user=user) as client:
         r = await client.patch("/districts/1", json={"name": "ByAlice"})
     assert r.status_code == 200
-    assert r.json()["updated_by"] == 1
+    body = r.json()
+    assert body["updated_by_id"] == 1
+    # Regression: the `updated_by` relationship must be populated on the
+    # response, not left null when only the `*_id` FK was patched.
+    assert body["updated_by"] is not None
+    assert body["updated_by"]["id"] == 1
+    assert body["updated_by"]["name"] == "Alice"
 
 
 @pytest.mark.asyncio
@@ -165,7 +171,9 @@ async def test_update_updated_by_not_set_without_user(seed, make_update_client):
     async with await make_update_client(config, current_user=None) as client:
         r = await client.patch("/districts/1", json={"name": "Anon"})
     assert r.status_code == 200
-    assert r.json()["updated_by"] is None
+    body = r.json()
+    assert body["updated_by_id"] is None
+    assert body["updated_by"] is None
 
 
 # ---------------------------------------------------------------------------

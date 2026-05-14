@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
@@ -11,6 +12,21 @@ from sqlalchemy.orm.strategy_options import _AbstractLoad
 from sqlalchemy.sql import Select
 
 from crudit.exceptions import CruditConfigError
+
+
+def _get_property_names(model: type) -> set[str]:
+    """Return names of plain Python @property attributes on the model.
+
+    Walks the MRO so properties defined on a base class are picked up.
+    `hybrid_property` is not a `property` subclass, so it is correctly
+    excluded — those have a SQL expression form and can stay in queries.
+    """
+    names: set[str] = set()
+    for klass in model.__mro__:
+        for attr_name, attr in vars(klass).items():
+            if isinstance(attr, property):
+                names.add(attr_name)
+    return names
 
 
 @dataclass
@@ -33,6 +49,11 @@ class JoinInfo:
     # JoinNode.children. The tree mirrors the nested structure of the
     # Pydantic schema passed to resolve_joins().
     nodes: dict[str, JoinNode] = field(default_factory=dict)
+
+    # Names of @property attributes on the *root* model. These are schema
+    # fields evaluated in Python (via Pydantic's from_attributes=True) and
+    # must never appear in filter/sort/search lists.
+    property_fields: set[str] = field(default_factory=set)
 
     # ------------------------------------------------------------------
     # Tree walking helpers
@@ -198,7 +219,7 @@ def resolve_joins(model: type[DeclarativeBase], schema: type[BaseModel]) -> Join
     to SQLAlchemy relationships, recursing into nested schemas to build a
     full join tree. Called once at route registration time.
     """
-    info = JoinInfo()
+    info = JoinInfo(property_fields=_get_property_names(model))
     _populate_nodes(model, schema, info.nodes)
     return info
 
@@ -210,6 +231,7 @@ def _populate_nodes(
 ) -> None:
     mapper = sa_inspect(model)
     relationship_map = {r.key: r for r in mapper.relationships}
+    property_names = _get_property_names(model)
 
     for field_name, field_info in schema.model_fields.items():
         annotation = field_info.annotation
@@ -218,6 +240,11 @@ def _populate_nodes(
             continue
 
         if field_name not in relationship_map:
+            # A @property returning a BaseModel is fine — Pydantic will
+            # evaluate it from the ORM instance after the query runs. Skip
+            # relationship resolution; nothing needs to load.
+            if field_name in property_names:
+                continue
             raise CruditConfigError(
                 f"Schema field '{field_name}' looks like a relationship "
                 f"(annotated with a BaseModel subclass) but no relationship "
@@ -230,6 +257,50 @@ def _populate_nodes(
         node = JoinNode(rel_name=field_name, model=related_class, is_collection=is_list)
         _populate_nodes(related_class, rel_schema, node.children)
         nodes[field_name] = node
+
+
+def assert_no_property_fields(
+    field_paths: Iterable[str],
+    model: type,
+    join_info: JoinInfo,
+    *,
+    context: str,
+) -> None:
+    """Raise CruditConfigError if any path resolves to a @property attribute.
+
+    Properties are evaluated in Python and have no SQL form, so they cannot
+    appear in `filterable_fields`, `sortable_fields`, or `search_fields`.
+
+    Walks dotted paths through the join tree: every non-leaf segment must
+    be a relationship; the leaf is checked against the final model's
+    @property names.
+    """
+    for path in field_paths:
+        parts = path.split(".")
+        nodes = join_info.nodes
+        current_model: type = model
+        for rel_name in parts[:-1]:
+            node = nodes.get(rel_name)
+            if node is None:
+                # The intermediate segment is missing from the join tree.
+                # If it's a property on the current model, flag it here.
+                # Otherwise, leave it for the existing request-time validation
+                # to report.
+                if rel_name in _get_property_names(current_model):
+                    raise CruditConfigError(
+                        f"'{rel_name}' on {current_model.__name__} is a @property, "
+                        f"not a SQL column — it cannot be used in {context}."
+                    )
+                break
+            current_model = node.model
+            nodes = node.children
+        else:
+            leaf = parts[-1]
+            if leaf in _get_property_names(current_model):
+                raise CruditConfigError(
+                    f"'{leaf}' on {current_model.__name__} is a @property, "
+                    f"not a SQL column — it cannot be used in {context}."
+                )
 
 
 def collect_needed_joins(

@@ -153,10 +153,10 @@ def create_endpoint(
                 obj.created_at = datetime.now(timezone.utc)
 
         # 6. Auto-fill created_by from current_user.id
-        if "created_by" in mapper.columns and current_user is not None:
+        if "created_by_id" in mapper.columns and current_user is not None:
             user_id = getattr(current_user, "id", None)
             if user_id is not None:
-                obj.created_by = user_id
+                obj.created_by_id = user_id
 
         # 7. Field setters (can be async)
         for field_name, setter in _config.field_setters.items():
@@ -178,10 +178,14 @@ def create_endpoint(
             await db.rollback()
             raise integrity_error_to_http(err, _unique_specs)
 
-        # 11. Reload with eager-loaded relationships from read_schema
+        # 11. Reload with eager-loaded relationships from read_schema.
+        # `populate_existing` forces relationship attrs to be refreshed on
+        # the identity-mapped instance — otherwise setting only `*_by_id`
+        # leaves the matching `*_by` relationship unloaded (None) in the
+        # response when the session uses expire_on_commit=False.
         pk_col = getattr(_model, _pk_field)
         pk_value = getattr(obj, _pk_field)
-        reload_q = select(_model).where(pk_col == pk_value)
+        reload_q = select(_model).where(pk_col == pk_value).execution_options(populate_existing=True)
         options = _join_info.eager_load_options(_model, set())
         if options:
             reload_q = reload_q.options(*options)

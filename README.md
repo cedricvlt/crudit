@@ -490,7 +490,9 @@ Multiple parents are supported (e.g. `/companies/{company_id}/cities/{city_id}/d
 | Field | Condition | Value |
 |---|---|---|
 | `created_at` | column exists and has no `server_default` | `datetime.now(timezone.utc)` |
-| `created_by` | column exists and user is authenticated | `current_user.id` |
+| `created_by_id` | column exists and user is authenticated | `current_user.id` |
+
+If the model also defines a `created_by` relationship, the response reloads it eagerly so it is never `null` when `created_by_id` was set.
 
 ### Field setters
 
@@ -540,7 +542,7 @@ For each POST request, crudit executes the following steps in order:
 4. Build ORM object from body
 5. Set parent FK fields
 6. Auto-fill `created_at` (if applicable)
-7. Auto-fill `created_by` (if applicable)
+7. Auto-fill `created_by_id` (if applicable)
 8. Run `field_setters`
 9. Call `before_create` hook
 10. `db.add(obj)` + `await db.commit()`
@@ -572,7 +574,7 @@ class DistrictSchema(BaseModel):   # reuse the read schema
     city_id: int
     city: CitySchema               # joined relationship — loaded automatically
     updated_at: datetime | None = None
-    updated_by: int | None = None
+    updated_by_id: int | None = None
 ```
 
 ### Auto-complete fields
@@ -580,7 +582,9 @@ class DistrictSchema(BaseModel):   # reuse the read schema
 | Field | Condition | Value |
 |---|---|---|
 | `updated_at` | column exists and has no `server_default` | `datetime.now(timezone.utc)` |
-| `updated_by` | column exists and user is authenticated | `current_user.id` |
+| `updated_by_id` | column exists and user is authenticated | `current_user.id` |
+
+If the model also defines an `updated_by` relationship, the response reloads it eagerly so it is never `null` when `updated_by_id` was set.
 
 Auto-complete fields are injected into the patch dict before field setters and the `before_update` hook run, so they can be inspected or overridden.
 
@@ -623,7 +627,7 @@ For each PATCH request, crudit executes the following steps in order:
 3. Object-level permission check (`company_id` / `allowed_users`)
 4. Parse body with `update_schema` → `patch_data` (only fields the client sent)
 5. Auto-fill `updated_at` into `patch_data` (if applicable)
-6. Auto-fill `updated_by` into `patch_data` (if applicable)
+6. Auto-fill `updated_by_id` into `patch_data` (if applicable)
 7. Run `field_setters` → merge results into `patch_data`
 8. Call `before_update(obj, patch_data, request, current_user) -> patch_data`
 9. Apply `patch_data` to ORM object (`setattr` for each key)
@@ -771,7 +775,7 @@ Status codes:
 Update endpoints return the updated object serialised as `read_schema`, with all joined relationships loaded:
 
 ```json
-{ "id": 1, "name": "Renamed", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" }, "updated_at": "2026-04-26T10:00:00Z", "updated_by": 1 }
+{ "id": 1, "name": "Renamed", "is_active": true, "city_id": 1, "city": { "id": 1, "name": "Paris" }, "updated_at": "2026-04-26T10:00:00Z", "updated_by_id": 1 }
 ```
 
 Status codes:
@@ -910,6 +914,12 @@ crudit inspects the Pydantic `schema` at registration time. Any field annotated 
 Detection **recurses into nested schemas**, so a chain like `District → City → Country` is loaded with a single chained `joinedload(District.city).joinedload(City.country)` — no manual eager-loading config needed.
 
 Nested fields (e.g. `city.name`) in `filterable_fields`, `sortable_fields` or `search_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship. Multi-level paths like `city.country.name` are supported too — every prefix on the chain is JOINed in order and `contains_eager` is chained accordingly. Every intermediate segment must be a m2o relationship (joining through an o2m would multiply rows); a path that crosses a `list[…]` field is rejected with a `ValueError`.
+
+### `@property` fields
+
+Schemas can include fields that map to a plain Python `@property` on the model (instead of a `mapped_column` or `relationship`). crudit detects these at registration time, **excludes them from the SQL query**, and lets Pydantic evaluate them per row via `from_attributes=True`. Properties returning either scalar values or nested `BaseModel`-shaped objects are both supported.
+
+Because properties have no SQL form, they cannot appear in `filterable_fields`, `sortable_fields`, or `search_fields` — doing so raises `CruditConfigError` at registration. SQLAlchemy `hybrid_property` (which does have a SQL expression form) is **not** affected and keeps working in queries.
 
 ---
 

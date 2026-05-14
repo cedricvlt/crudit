@@ -106,10 +106,10 @@ def update_endpoint(
                 patch_data["updated_at"] = datetime.now(timezone.utc)
 
         # 6. Auto-fill updated_by from current_user.id
-        if "updated_by" in mapper.columns and current_user is not None:
+        if "updated_by_id" in mapper.columns and current_user is not None:
             user_id = getattr(current_user, "id", None)
             if user_id is not None:
-                patch_data["updated_by"] = user_id
+                patch_data["updated_by_id"] = user_id
 
         # 7. Field setters (can be async)
         for field_name, setter in _config.field_setters.items():
@@ -143,8 +143,12 @@ def update_endpoint(
             await db.rollback()
             raise integrity_error_to_http(err, _unique_specs)
 
-        # 12. Reload with eager-loaded relationships from read_schema
-        reload_q = select(_model).where(pk_col == id)
+        # 12. Reload with eager-loaded relationships from read_schema.
+        # `populate_existing` forces relationship attrs to be refreshed on
+        # the identity-mapped instance — otherwise setting only `*_by_id`
+        # leaves the matching `*_by` relationship stale (or None) in the
+        # response when the session uses expire_on_commit=False.
+        reload_q = select(_model).where(pk_col == id).execution_options(populate_existing=True)
         reload_options = _join_info.eager_load_options(_model, set())
         if reload_options:
             reload_q = reload_q.options(*reload_options)

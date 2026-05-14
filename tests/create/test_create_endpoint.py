@@ -167,8 +167,14 @@ async def test_create_sets_created_by(seed, make_create_client, cleanup_district
     async with await make_create_client(config, current_user=user) as client:
         r = await client.post("/cities/1/districts", json={"name": "ByAlice"})
     assert r.status_code == 201
-    assert r.json()["created_by"] == 1
-    cleanup_districts.append(r.json()["id"])
+    body = r.json()
+    assert body["created_by_id"] == 1
+    # Regression: the `created_by` relationship must be populated on the
+    # response, not left null when only the `*_id` FK was set.
+    assert body["created_by"] is not None
+    assert body["created_by"]["id"] == 1
+    assert body["created_by"]["name"] == "Alice"
+    cleanup_districts.append(body["id"])
 
 
 @pytest.mark.asyncio
@@ -180,8 +186,10 @@ async def test_create_created_by_not_set_without_user(seed, make_create_client, 
     async with await make_create_client(config, current_user=None) as client:
         r = await client.post("/cities/1/districts", json={"name": "Anonymous"})
     assert r.status_code == 201
-    assert r.json()["created_by"] is None
-    cleanup_districts.append(r.json()["id"])
+    body = r.json()
+    assert body["created_by_id"] is None
+    assert body["created_by"] is None
+    cleanup_districts.append(body["id"])
 
 
 # ---------------------------------------------------------------------------

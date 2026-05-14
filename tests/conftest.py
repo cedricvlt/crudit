@@ -82,18 +82,41 @@ class District(Base):
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     sort_order: Mapped[int | None] = mapped_column(nullable=True, default=None)
 
     city: Mapped[City] = relationship("City", back_populates="districts")
+    created_by: Mapped[User | None] = relationship("User", foreign_keys=[created_by_id])
+    updated_by: Mapped[User | None] = relationship("User", foreign_keys=[updated_by_id])
     allowed_users: Mapped[list[User]] = relationship(
         "User", secondary=district_allowed_users
     )
 
     _order_fields = ("name",)
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.name} #{self.id}"
+
+    @property
+    def summary(self) -> "DistrictSummary":
+        return DistrictSummary(label=self.name, active=self.is_active)
+
+
+class DistrictSummary:
+    """Plain Python object returned by `District.summary`.
+
+    Used by tests to exercise schemas where a Pydantic field maps to a
+    @property returning a BaseModel-shaped object (read via Pydantic's
+    `from_attributes=True`).
+    """
+
+    def __init__(self, label: str, active: bool) -> None:
+        self.label = label
+        self.active = active
 
 
 class Tag(Base):
@@ -197,6 +220,11 @@ class CitySchema(BaseModel):
     name: str
 
 
+class UserSchema(BaseModel):
+    id: int
+    name: str
+
+
 class DistrictSchema(BaseModel):
     id: int
     name: str
@@ -204,9 +232,11 @@ class DistrictSchema(BaseModel):
     city_id: int
     city: CitySchema
     created_at: datetime | None = None
-    created_by: int | None = None
+    created_by_id: int | None = None
+    created_by: UserSchema | None = None
     updated_at: datetime | None = None
-    updated_by: int | None = None
+    updated_by_id: int | None = None
+    updated_by: UserSchema | None = None
 
 
 class DistrictCreateSchema(BaseModel):
