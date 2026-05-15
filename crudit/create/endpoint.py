@@ -127,6 +127,8 @@ def create_endpoint(
                 )
             parent_pk = detect_pk_field(pp.model)
             pk_col = getattr(pp.model, parent_pk)
+            pk_python_type = sa_inspect(pp.model).columns[parent_pk].type.python_type
+            url_value = pk_python_type(url_value)
             q = select(pp.model).where(pk_col == url_value)
             if has_allowed_users_relationship(pp.model):
                 q = q.options(selectinload(getattr(pp.model, "allowed_users")))
@@ -160,7 +162,8 @@ def create_endpoint(
                     status_code=400,
                     detail=f"Missing path parameter '{url_param}'.",
                 )
-            setattr(obj, model_field, url_value)
+            col_python_type = sa_inspect(_model).columns[model_field].type.python_type
+            setattr(obj, model_field, col_python_type(url_value))
 
         # 5. Auto-fill created_at when the column has no server_default
         mapper = sa_inspect(_model)
