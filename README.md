@@ -1009,6 +1009,35 @@ For `update_endpoint`, the row being updated is excluded from the check so a no-
 
 ---
 
+## Foreign key validation
+
+`create_endpoint` and `update_endpoint` automatically validate every foreign-key column declared on the SQLAlchemy model before persisting. **No configuration is required** — the model is the source of truth.
+
+A single pre-flight SQL query checks every relevant FK in one round-trip (one labeled scalar subquery per FK). If any reference is missing, the request fails with **422 Unprocessable Entity** naming every offending column:
+
+```json
+{
+  "detail": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "fields": {
+      "city_id": ["Does not exist"],
+      "company_id": ["Does not exist"]
+    }
+  }
+}
+```
+
+**Scope.**
+- *`create_endpoint`*: only FKs that appear in the request body are checked. FKs set from `parent_params` are skipped (they're already 404-validated upstream), FKs set from `path_filters` are skipped (URL-derived), and the auto-set `created_by_id`/`updated_by_id` columns are skipped (trusted from `current_user.id`).
+- *`update_endpoint`*: only FKs included in the PATCH body are checked. A PATCH that doesn't mention any FK column issues zero FK queries. The auto-set `updated_by_id` is skipped. The FK check runs before the unique-constraint check, so an invalid FK is reported instead of a downstream uniqueness error.
+
+**NULL bypass.** A `None` value for a nullable FK is skipped — there is nothing to look up.
+
+**Race-safety.** The `commit()` is wrapped with an `IntegrityError` catch, so a target row deleted between pre-flight and commit still surfaces as 422 (rather than 500).
+
+---
+
 ## Custom filter functions
 
 For complex filtering logic that can't be expressed with `field__operator=value`:

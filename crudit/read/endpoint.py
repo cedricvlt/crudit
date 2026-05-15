@@ -17,9 +17,6 @@ from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
 from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
-# Backwards-compatible alias — other endpoint modules still import this name.
-_detect_pk_field = detect_pk_field
-
 
 def read_endpoint(
     router: APIRouter,

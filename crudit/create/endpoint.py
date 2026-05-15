@@ -11,10 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.create.config import CreateConfig
+from crudit.foreign_keys import (
+    check_foreign_keys,
+    detect_foreign_keys,
+    integrity_error_to_http as fk_integrity_error_to_http,
+)
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.types import PermissionDepFn
-from crudit.read.endpoint import _detect_pk_field
+from crudit.read.endpoint import detect_pk_field
 from crudit.signature import inject_path_params, patch_param_annotation
 from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
@@ -73,10 +78,11 @@ def create_endpoint(
     ``city_id`` is read from the URL and clients omit it from the body.
     """
     join_info = resolve_joins(model, read_schema)
-    pk_field = _detect_pk_field(model)
+    pk_field = detect_pk_field(model)
     _path_filters: dict[str, str] = path_filters or {}
     _body_schema = _strip_path_filter_fields(create_schema, _path_filters)
     unique_specs = detect_unique_constraints(model)
+    fk_specs = detect_foreign_keys(model)
 
     _model = model
     _create_schema = _body_schema
@@ -85,6 +91,17 @@ def create_endpoint(
     _join_info = join_info
     _pk_field = pk_field
     _unique_specs = unique_specs
+    _fk_specs = fk_specs
+    # FK columns whose existence is either already validated upstream
+    # (parent_params do a 404 + permission check; path_filters copy a
+    # URL value) or set from a trusted source (auto-filled from
+    # current_user.id). Skipping them keeps the pre-flight scoped to
+    # FKs the client put in the request body.
+    _fk_skip_cols: frozenset[str] = frozenset(
+        {pp.child_field for pp in _config.parent_params}
+        | set(_path_filters.values())
+        | {"created_by_id", "updated_by_id"}
+    )
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -108,7 +125,7 @@ def create_endpoint(
                     status_code=400,
                     detail=f"Missing path parameter '{pp.url_param}'.",
                 )
-            parent_pk = _detect_pk_field(pp.model)
+            parent_pk = detect_pk_field(pp.model)
             pk_col = getattr(pp.model, parent_pk)
             q = select(pp.model).where(pk_col == url_value)
             if has_allowed_users_relationship(pp.model):
@@ -166,19 +183,34 @@ def create_endpoint(
         if _config.before_create is not None:
             obj = await call_hook(_config.before_create, obj, request, current_user)
 
-        # 9. Pre-flight unique constraint check
+        # 9. Pre-flight foreign-key existence check on client-provided body FKs.
+        # Uses body.model_dump() (not vars(obj)) so the "only body FKs" scope
+        # is a hard contract independent of hook behavior.
+        if _fk_specs:
+            await check_foreign_keys(
+                db, _fk_specs, body.model_dump(), skip_cols=_fk_skip_cols,
+            )
+
+        # 10. Pre-flight unique constraint check
         if _unique_specs:
             await check_unique_constraints(db, _model, _unique_specs, vars(obj))
 
-        # 10. Persist
+        # 11. Persist
         db.add(obj)
         try:
             await db.commit()
         except IntegrityError as err:
             await db.rollback()
-            raise integrity_error_to_http(err, _unique_specs)
+            raise (
+                integrity_error_to_http(err, _unique_specs)
+                or fk_integrity_error_to_http(err, _fk_specs)
+                or HTTPException(
+                    status_code=422,
+                    detail={"code": "VALIDATION_ERROR", "message": "Validation failed"},
+                )
+            )
 
-        # 11. Reload with eager-loaded relationships from read_schema.
+        # 12. Reload with eager-loaded relationships from read_schema.
         # `populate_existing` forces relationship attrs to be refreshed on
         # the identity-mapped instance — otherwise setting only `*_by_id`
         # leaves the matching `*_by` relationship unloaded (None) in the
@@ -192,7 +224,7 @@ def create_endpoint(
         result = await db.execute(reload_q)
         obj = result.scalars().unique().one()
 
-        # 12. after_create hook
+        # 13. after_create hook
         if _config.after_create is not None:
             obj = await call_hook(_config.after_create, obj, request, current_user)
 

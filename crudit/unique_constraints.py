@@ -101,17 +101,15 @@ async def check_unique_constraints(
 def integrity_error_to_http(
     err: IntegrityError,
     specs: list[UniqueSpec],
-) -> HTTPException:
+) -> HTTPException | None:
     """Translate an ``IntegrityError`` raised at ``commit()`` to HTTP 422.
 
     Best-effort: tries to match a known constraint name in the underlying
-    driver's error text; otherwise returns a generic 422.
+    driver's error text. Returns ``None`` if no spec matches so callers
+    can chain multiple translators (unique → fk → generic 422).
     """
     msg = str(err.orig) if err.orig is not None else str(err)
     for spec in specs:
         if spec.name and spec.name in msg:
             return _violation_exception(spec)
-    return HTTPException(
-        status_code=422,
-        detail={"code": "VALIDATION_ERROR", "message": "Validation failed"},
-    )
+    return None

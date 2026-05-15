@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.delete.config import DeleteConfig
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
-from crudit.read.endpoint import _detect_pk_field
+from crudit.read.endpoint import detect_pk_field
 from crudit.types import PermissionDepFn
 from crudit.signature import patch_param_annotation
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
@@ -32,7 +32,7 @@ def delete_endpoint(
 
     Row-level permission checks (company_id / allowed_users) are applied before deletion.
     """
-    pk_field = _detect_pk_field(model)
+    pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
     load_allowed_users = has_allowed_users_relationship(model)
 

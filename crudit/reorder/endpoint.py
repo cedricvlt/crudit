@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.list.filters import apply_path_filters
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
-from crudit.read.endpoint import _detect_pk_field
+from crudit.read.endpoint import detect_pk_field
 from crudit.reorder.config import ReorderConfig
 from crudit.signature import inject_path_params
 from crudit.types import PermissionDepFn
@@ -49,7 +49,7 @@ def reorder_endpoint(
             "Add a sort_order column to use reorder_endpoint."
         )
 
-    pk_field = _detect_pk_field(model)
+    pk_field = detect_pk_field(model)
     load_allowed_users = has_allowed_users_relationship(model)
 
     _model = model

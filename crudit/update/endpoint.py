@@ -10,9 +10,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
+from crudit.foreign_keys import (
+    check_foreign_keys,
+    detect_foreign_keys,
+    integrity_error_to_http as fk_integrity_error_to_http,
+)
 from crudit.joins import resolve_joins
 from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
-from crudit.read.endpoint import _detect_pk_field
+from crudit.read.endpoint import detect_pk_field
 from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
 from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
@@ -42,13 +47,14 @@ def update_endpoint(
     Join resolution for `read_schema` happens once at registration time.
     """
     join_info = resolve_joins(model, read_schema)
-    pk_field = _detect_pk_field(model)
+    pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
     load_allowed_users = (
         has_allowed_users_relationship(model)
         and "allowed_users" not in join_info.nodes
     )
     unique_specs = detect_unique_constraints(model)
+    fk_specs = detect_foreign_keys(model)
 
     _model = model
     _update_schema = update_schema
@@ -57,6 +63,9 @@ def update_endpoint(
     _join_info = join_info
     _pk_field = pk_field
     _unique_specs = unique_specs
+    _fk_specs = fk_specs
+    # updated_by_id is auto-filled from current_user.id — trusted, skip.
+    _fk_skip_cols: frozenset[str] = frozenset({"updated_by_id"})
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -119,7 +128,16 @@ def update_endpoint(
         if _config.before_update is not None:
             patch_data = await call_hook(_config.before_update, obj, patch_data, request, current_user)
 
-        # 9. Pre-flight unique constraint check using the post-patch values.
+        # 9. Pre-flight foreign-key check on client-provided patch fields.
+        # patch_data is exclude_unset, so a PATCH that touches no FK column
+        # results in zero FK queries. Runs before the unique check so an
+        # invalid FK is reported instead of a downstream uniqueness error.
+        if _fk_specs:
+            await check_foreign_keys(
+                db, _fk_specs, patch_data, skip_cols=_fk_skip_cols,
+            )
+
+        # 10. Pre-flight unique constraint check using the post-patch values.
         # We check before mutating `obj` so the SELECT's implicit autoflush
         # doesn't try to push the dirty row into the DB and raise IntegrityError
         # itself.
@@ -131,19 +149,26 @@ def update_endpoint(
                 exclude_pk=(_pk_field, id),
             )
 
-        # 10. Apply patch to ORM object
+        # 11. Apply patch to ORM object
         for attr, value in patch_data.items():
             setattr(obj, attr, value)
 
-        # 11. Persist
+        # 12. Persist
         db.add(obj)
         try:
             await db.commit()
         except IntegrityError as err:
             await db.rollback()
-            raise integrity_error_to_http(err, _unique_specs)
+            raise (
+                integrity_error_to_http(err, _unique_specs)
+                or fk_integrity_error_to_http(err, _fk_specs)
+                or HTTPException(
+                    status_code=422,
+                    detail={"code": "VALIDATION_ERROR", "message": "Validation failed"},
+                )
+            )
 
-        # 12. Reload with eager-loaded relationships from read_schema.
+        # 13. Reload with eager-loaded relationships from read_schema.
         # `populate_existing` forces relationship attrs to be refreshed on
         # the identity-mapped instance — otherwise setting only `*_by_id`
         # leaves the matching `*_by` relationship stale (or None) in the
@@ -155,7 +180,7 @@ def update_endpoint(
         result = await db.execute(reload_q)
         obj = result.scalars().unique().one()
 
-        # 13. after_update hook
+        # 14. after_update hook
         if _config.after_update is not None:
             obj = await call_hook(_config.after_update, obj, request, current_user)
 
