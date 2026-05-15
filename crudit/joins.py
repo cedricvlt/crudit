@@ -303,6 +303,51 @@ def assert_no_property_fields(
                 )
 
 
+def collect_sortable_field_paths(
+    model: type[DeclarativeBase],
+    schema: type[BaseModel],
+    join_info: JoinInfo,
+) -> list[str]:
+    """Return every dotted field path in `schema` that is backed by a SQL
+    column and reachable through m2o relationships.
+
+    Used to auto-default `sortable_fields` so that any field the API exposes
+    is sortable without having to list it again. Skips:
+    - scalar fields not in the model's mapper columns (e.g. @property,
+      hybrid_property, fields not on the ORM model);
+    - o2m relationships (`list[BaseModel]`) — sorting through a collection
+      would multiply rows;
+    - nested BaseModel fields with no matching relationship in the join tree
+      (e.g. @property returning a BaseModel).
+    """
+    out: list[str] = []
+    _walk_sortable(model, schema, join_info.nodes, "", out)
+    return out
+
+
+def _walk_sortable(
+    model: type,
+    schema: type[BaseModel],
+    nodes: dict[str, JoinNode],
+    prefix: str,
+    out: list[str],
+) -> None:
+    column_names = {c.key for c in sa_inspect(model).columns}
+    for field_name, field_info in schema.model_fields.items():
+        rel_schema, is_list = _extract_nested_model(field_info.annotation)
+        path = f"{prefix}.{field_name}" if prefix else field_name
+        if rel_schema is None:
+            if field_name in column_names:
+                out.append(path)
+            continue
+        if is_list:
+            continue
+        node = nodes.get(field_name)
+        if node is None:
+            continue
+        _walk_sortable(node.model, rel_schema, node.children, path, out)
+
+
 def collect_needed_joins(
     filter_params: dict[str, list[str]],
     sort_param: str | None,

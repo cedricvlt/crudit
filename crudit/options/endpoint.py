@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from crudit.context import CruditContext
 from crudit.exceptions import CruditConfigError
-from crudit.joins import JoinInfo, collect_needed_joins, resolve_joins
+from crudit.joins import JoinInfo, collect_needed_joins, collect_sortable_field_paths, resolve_joins
 from crudit.types import PermissionDepFn
 from crudit.list.filters import (
     apply_default_filters,
@@ -65,6 +65,8 @@ def options_endpoint(
         )
 
     join_info: JoinInfo = resolve_joins(model, schema)
+    auto_sortable = collect_sortable_field_paths(model, schema, join_info)
+    config.sortable_fields = list(dict.fromkeys([*auto_sortable, *config.sortable_fields]))
 
     _model = model
     _config = config

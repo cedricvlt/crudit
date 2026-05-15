@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from crudit.context import CruditContext
-from crudit.joins import assert_no_property_fields, resolve_joins
+from crudit.joins import assert_no_property_fields, collect_sortable_field_paths, resolve_joins
 from crudit.list.config import ListConfig
 from crudit.list.filters import extract_filter_params
 from crudit.list.service import list_service
@@ -41,6 +41,8 @@ def list_endpoint(
     resolution and config validation happen here (once), not per-request.
     """
     join_info = resolve_joins(model, schema)
+    auto_sortable = collect_sortable_field_paths(model, schema, join_info)
+    config.sortable_fields = list(dict.fromkeys([*auto_sortable, *config.sortable_fields]))
     assert_no_property_fields(
         config.filterable_fields, model, join_info, context="filterable_fields"
     )

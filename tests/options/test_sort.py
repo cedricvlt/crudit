@@ -58,5 +58,26 @@ async def test_unknown_sort_field_returns_400(seed, make_client):
             sortable_fields=["name"],
         )
     ) as client:
-        r = await client.get("/cities/1/districts?sort=is_active")
+        r = await client.get("/cities/1/districts?sort=non_existent_field")
         assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_schema_field_auto_sortable(seed, make_client):
+    # DistrictSchema has `is_active` — should be sortable without listing.
+    async with await make_client(
+        OptionsConfig(login_required=False, label_field="name"),
+    ) as client:
+        r = await client.get("/cities/1/districts?sort=is_active")
+        assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_nested_schema_field_auto_sortable(seed, make_client):
+    # DistrictSchema has `city: CitySchema` — city.name should be sortable
+    # without explicit listing.
+    async with await make_client(
+        OptionsConfig(login_required=False, label_field="name"),
+    ) as client:
+        r = await client.get("/cities/1/districts?sort=city.name")
+        assert r.status_code == 200

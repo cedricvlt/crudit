@@ -1177,6 +1177,25 @@ class District(Base):
 
 Sort columns always use `NULLS LAST`.
 
+### Schema fields are sortable by default
+
+For `list_endpoint` and `options_endpoint`, every SQL-backed field of the response schema — including nested ones reached through m2o relationships — is automatically added to `sortable_fields`. Anything passed in `config.sortable_fields` is **extra**, on top of these defaults.
+
+Skipped from auto-defaulting: `@property` attributes (no SQL form), `hybrid_property` (must be opted in explicitly), and o2m nested fields like `list[BaseModel]` (joining through a collection would multiply rows).
+
+```python
+class DistrictSchema(BaseModel):
+    id: int
+    name: str
+    is_active: bool
+    city: CitySchema   # nested m2o
+
+list_endpoint(..., schema=DistrictSchema, config=ListConfig())
+# ?sort=name, ?sort=-is_active, ?sort=city.name all work — no explicit list needed.
+```
+
+`filterable_fields` and `search_fields` keep their explicit, opt-in behaviour.
+
 ---
 
 ## `OptionsConfig` reference
