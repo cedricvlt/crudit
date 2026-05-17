@@ -91,6 +91,12 @@ async def list_service(
     if config.before_query is not None:
         query = await call_hook(config.before_query, query, ctx)
 
+    computed_names = list(config.computed_fields.keys())
+    if computed_names:
+        query = query.add_columns(
+            *[fn(model).label(name) for name, fn in config.computed_fields.items()]
+        )
+
     # COUNT (before sort/pagination)
     count_query = select(func.count()).select_from(query.subquery())
     total_count = (await db.execute(count_query)).scalar_one()
@@ -108,7 +114,16 @@ async def list_service(
         query = query.options(*options)
 
     result = await db.execute(query)
-    rows = list(result.scalars().unique())
+    if computed_names:
+        raw = result.unique().all()
+        rows = []
+        for row in raw:
+            instance = row[0]
+            for i, name in enumerate(computed_names, start=1):
+                setattr(instance, name, row[i])
+            rows.append(instance)
+    else:
+        rows = list(result.scalars().unique())
 
     join_info.sort_o2m_collections(rows)
 

@@ -17,7 +17,13 @@ from crudit.permissions import apply_permissions  # noqa: F401  (kept for re-exp
 from crudit.schemas import PaginatedResponse
 from crudit.signature import inject_path_params, inject_query_params
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
+from crudit.utils import (
+    bind_perms,
+    get_error_responses,
+    model_snake_name,
+    user_dep_or_none,
+    validate_computed_fields,
+)
 
 
 def list_endpoint(
@@ -41,6 +47,7 @@ def list_endpoint(
     resolution and config validation happen here (once), not per-request.
     """
     join_info = resolve_joins(model, schema)
+    validate_computed_fields(config.computed_fields, model, schema)
     auto_sortable = collect_sortable_field_paths(model, schema, join_info)
     config.sortable_fields = list(dict.fromkeys([*auto_sortable, *config.sortable_fields]))
     assert_no_property_fields(

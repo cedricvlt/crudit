@@ -15,7 +15,13 @@ from crudit.read.config import ReadConfig
 from crudit.read.service import detect_pk_field, read_service
 from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
+from crudit.utils import (
+    bind_perms,
+    get_error_responses,
+    model_snake_name,
+    user_dep_or_none,
+    validate_computed_fields,
+)
 
 
 def read_endpoint(
@@ -37,6 +43,7 @@ def read_endpoint(
     Join resolution and PK detection happen once at registration time.
     """
     join_info = resolve_joins(model, schema)
+    validate_computed_fields(config.computed_fields, model, schema)
     pk_field = detect_pk_field(model)
     pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
 

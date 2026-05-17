@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
+
+from sqlalchemy.orm import DeclarativeBase
 
 from crudit.types import AfterFn, FilterFn, HookFn, SearchFn
 
@@ -25,6 +27,14 @@ class ListConfig:
 
     # Always-applied filters, not exposed as URL params
     default_filters: dict[str, Any] = field(default_factory=dict)
+
+    # Computed fields — name -> callable(model_cls) returning a SQL scalar
+    # expression (typically a correlated subquery). Each is injected as a
+    # labeled column on the main SELECT and attached to each row before
+    # Pydantic validation. The response schema must declare these fields.
+    computed_fields: dict[str, Callable[[type[DeclarativeBase]], Any]] = field(
+        default_factory=dict
+    )
 
     # Hooks
     before_query: HookFn | None = None

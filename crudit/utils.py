@@ -5,6 +5,10 @@ import re
 from typing import Any, Callable
 
 from fastapi import Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import DeclarativeBase
+
+from crudit.exceptions import CruditConfigError
 
 
 def model_snake_name(model: type) -> str:
@@ -51,6 +55,30 @@ async def call_hook(fn: Callable, *args: Any) -> Any:
     if asyncio.iscoroutinefunction(fn):
         return await fn(*args)
     return fn(*args)
+
+
+def validate_computed_fields(
+    computed_fields: dict[str, Any],
+    model: type[DeclarativeBase],
+    schema: type[BaseModel],
+) -> None:
+    """Reject computed field names that collide with model columns or are
+    missing from the response schema."""
+    if not computed_fields:
+        return
+    column_names = {c.name for c in model.__table__.columns}
+    schema_fields = set(schema.model_fields.keys())
+    for name in computed_fields:
+        if name in column_names:
+            raise CruditConfigError(
+                f"computed_fields name {name!r} collides with a column on "
+                f"{model.__name__}."
+            )
+        if name not in schema_fields:
+            raise CruditConfigError(
+                f"computed_fields name {name!r} is not declared on "
+                f"{schema.__name__}; add it as a field so it is serialised."
+            )
 
 
 def bind_perms(permission_dep: Callable, perms: list[str]) -> Callable:

@@ -69,8 +69,23 @@ async def read_service(
     if config.before_query is not None:
         query = await call_hook(config.before_query, query, ctx)
 
+    computed_names = list(config.computed_fields.keys())
+    if computed_names:
+        query = query.add_columns(
+            *[fn(model).label(name) for name, fn in config.computed_fields.items()]
+        )
+
     result = await db.execute(query)
-    obj = result.scalars().unique().one_or_none()
+    if computed_names:
+        row = result.unique().one_or_none()
+        if row is None:
+            obj = None
+        else:
+            obj = row[0]
+            for i, name in enumerate(computed_names, start=1):
+                setattr(obj, name, row[i])
+    else:
+        obj = result.scalars().unique().one_or_none()
 
     if obj is None:
         raise CruditNotFound(f"{model.__name__} with id {id!r} not found.")

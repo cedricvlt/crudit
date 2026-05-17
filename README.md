@@ -1107,6 +1107,37 @@ config = ReadConfig(
 
 `before_query` runs before the database call. `after_query` receives the ORM object after the permission check passes, before serialization.
 
+### Computed fields
+
+`list_endpoint` and `read_endpoint` support adding **SQL-level computed fields** to the response — typically aggregates such as counting rows in a one-to-many relationship. The expression is injected as a labeled column on the main `SELECT`, so the value is computed in a single round-trip without loading the underlying collection.
+
+Each entry maps a field name to a callable that receives the model class and returns a SQL scalar expression (usually a correlated subquery). The response schema must declare the field.
+
+```python
+from sqlalchemy import func, select
+from crudit import ListConfig
+
+class UserSchema(BaseModel):
+    id: int
+    name: str
+    post_count: int
+
+config = ListConfig(
+    computed_fields={
+        "post_count": lambda User: (
+            select(func.count(Post.id))
+            .where(Post.user_id == User.id)
+            .correlate(User)
+            .scalar_subquery()
+        ),
+    },
+)
+```
+
+The same option exists on `ReadConfig`. Crudit validates at registration time that each computed field name is declared on the response schema and does not collide with a column on the model.
+
+In v1, computed fields are response-only: they cannot be filtered, sorted, or searched.
+
 ### `CruditContext`
 
 Hooks for `list_endpoint`, `options_endpoint`, and `read_endpoint` receive a `CruditContext` instead of the FastAPI `Request`. This lets the same business logic run from non-HTTP callers (MCP tools, background jobs, CLIs):
@@ -1310,6 +1341,9 @@ class ListConfig:
     search_fields: list[str]            # fields for ?q= ILIKE search; supports "rel.field" dot-notation
     search_fn: SearchFn | None          # custom search fn (overrides search_fields)
 
+    # Computed fields — SQL-level scalar expressions added to each row
+    computed_fields: dict[str, Callable[[type[Model]], Any]]
+
     # Hooks
     before_query: HookFn | None         # (query, request, current_user) -> query
     after_query: AfterFn | None         # (rows, request, current_user) -> rows
@@ -1329,6 +1363,9 @@ class ReadConfig:
     # Auth
     login_required: bool                # default True — 401 if no user
     permissions: list[str]              # required permission strings
+
+    # Computed fields — SQL-level scalar expressions added to the row
+    computed_fields: dict[str, Callable[[type[Model]], Any]]
 
     # Hooks
     before_query: HookFn | None         # (query, request, current_user) -> query
