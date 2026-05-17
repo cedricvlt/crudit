@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 from sqlalchemy.orm import DeclarativeBase
@@ -15,9 +15,12 @@ def apply_sort(
     model: type[DeclarativeBase],
     join_info: JoinInfo,
     sortable_fields: list[str],
+    computed_fields: dict[str, Callable[[type[DeclarativeBase]], Any]] | None = None,
 ) -> Select:
     if sort_param:
-        order_clauses = _parse_sort(sort_param, model, join_info, sortable_fields)
+        order_clauses = _parse_sort(
+            sort_param, model, join_info, sortable_fields, computed_fields or {}
+        )
     else:
         order_clauses = _default_sort(model)
 
@@ -29,6 +32,7 @@ def _parse_sort(
     model: type[DeclarativeBase],
     join_info: JoinInfo,
     sortable_fields: list[str],
+    computed_fields: dict[str, Callable[[type[DeclarativeBase]], Any]],
 ) -> list[Any]:
     clauses = []
     for part in sort_param.split(","):
@@ -44,7 +48,10 @@ def _parse_sort(
                 detail=f"Field '{field_path}' is not sortable.",
             )
 
-        col = resolve_nested_column(field_path, model, join_info)
+        if field_path in computed_fields:
+            col = computed_fields[field_path](model)
+        else:
+            col = resolve_nested_column(field_path, model, join_info)
         clause = nulls_last(col.desc() if descending else col.asc())
         clauses.append(clause)
 

@@ -104,7 +104,14 @@ async def list_service(
     if count_only:
         return total_count
 
-    query = apply_sort(query, sort, model, join_info, config.sortable_fields)
+    query = apply_sort(
+        query,
+        sort,
+        model,
+        join_info,
+        config.sortable_fields,
+        config.computed_fields,
+    )
 
     pagination = resolve_pagination(page, items_per_page, offset, limit)
     query = apply_pagination(query, pagination)

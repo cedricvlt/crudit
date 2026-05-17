@@ -49,7 +49,11 @@ def list_endpoint(
     join_info = resolve_joins(model, schema)
     validate_computed_fields(config.computed_fields, model, schema)
     auto_sortable = collect_sortable_field_paths(model, schema, join_info)
-    config.sortable_fields = list(dict.fromkeys([*auto_sortable, *config.sortable_fields]))
+    config.sortable_fields = list(dict.fromkeys([
+        *auto_sortable,
+        *config.computed_fields.keys(),
+        *config.sortable_fields,
+    ]))
     assert_no_property_fields(
         config.filterable_fields, model, join_info, context="filterable_fields"
     )

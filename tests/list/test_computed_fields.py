@@ -111,6 +111,35 @@ async def test_computed_field_visible_in_after_query_hook(seed, engine):
 
 
 @pytest.mark.asyncio
+async def test_sort_by_computed_field_asc(seed, engine):
+    config = ListConfig(
+        login_required=False,
+        computed_fields={"allowed_user_count": _allowed_user_count_subquery},
+    )
+    app = _make_app(engine, config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/cities/1/districts?sort=allowed_user_count")
+        assert r.status_code == 200
+        ids = [d["id"] for d in r.json()["data"]]
+        # d2 has 0, d1 has 1 → ascending puts d2 first
+        assert ids == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_sort_by_computed_field_desc(seed, engine):
+    config = ListConfig(
+        login_required=False,
+        computed_fields={"allowed_user_count": _allowed_user_count_subquery},
+    )
+    app = _make_app(engine, config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/cities/1/districts?sort=-allowed_user_count")
+        assert r.status_code == 200
+        ids = [d["id"] for d in r.json()["data"]]
+        assert ids == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_count_only_works_with_computed_fields(seed, engine):
     config = ListConfig(
         login_required=False,
