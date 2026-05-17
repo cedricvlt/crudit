@@ -86,6 +86,7 @@ async def list_service(
         config.filterable_fields,
         config.filter_fns,
         ctx.user,
+        config.computed_fields,
     )
 
     if config.before_query is not None:

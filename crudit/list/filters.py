@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
@@ -62,7 +62,9 @@ def apply_filters(
     filterable_fields: list[str],
     filter_fns: dict[str, FilterFn],
     current_user: Any,
+    computed_fields: dict[str, Callable[[type[DeclarativeBase]], Any]] | None = None,
 ) -> Select:
+    computed_fields = computed_fields or {}
     for raw_key, raw_values in raw_params.items():
         if raw_key in _RESERVED_PARAMS:
             continue
@@ -80,7 +82,10 @@ def apply_filters(
             query = filter_fns[field_path](query, raw_values[0], current_user)
             continue
 
-        col = resolve_nested_column(field_path, model, join_info)
+        if field_path in computed_fields:
+            col = computed_fields[field_path](model)
+        else:
+            col = resolve_nested_column(field_path, model, join_info)
         if len(raw_values) == 1:
             query = query.where(_build_expression(col, operator, raw_values[0]))
         else:
@@ -208,14 +213,7 @@ _RANGE_FNS = {
 
 def _build_date_period_expression(col: Any, operator: str, raw_value: str) -> Any:
     start_date, end_date = _RANGE_FNS[operator](raw_value)
-    python_type = None
-    try:
-        python_type = col.property.columns[0].type.impl_instance.python_type
-    except Exception:  # noqa: BLE001
-        try:
-            python_type = col.property.columns[0].type.python_type
-        except Exception:  # noqa: BLE001
-            pass
+    python_type = _column_python_type(col)
     if python_type is datetime:
         start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
         end = datetime(end_date.year, end_date.month, end_date.day, tzinfo=timezone.utc)
@@ -235,14 +233,25 @@ def _parse_key(raw_key: str) -> tuple[str, str]:
 
 
 def _is_datetime_col(col: Any) -> bool:
-    try:
-        python_type = col.property.columns[0].type.impl_instance.python_type
-    except Exception:
+    return _column_python_type(col) is datetime
+
+
+def _column_python_type(col: Any) -> type | None:
+    """Return the Python type of a column or column-like expression.
+
+    Handles both ORM mapped columns (via `col.property.columns[0].type`) and
+    bare SQL expressions like scalar subqueries (via `col.type`).
+    """
+    for accessor in (
+        lambda c: c.property.columns[0].type.impl_instance.python_type,
+        lambda c: c.property.columns[0].type.python_type,
+        lambda c: c.type.python_type,
+    ):
         try:
-            python_type = col.property.columns[0].type.python_type
-        except Exception:
-            return False
-    return python_type is datetime
+            return accessor(col)
+        except Exception:  # noqa: BLE001
+            continue
+    return None
 
 
 def _is_date_only_string(value: str) -> bool:
@@ -291,13 +300,9 @@ def _build_expression(col: Any, operator: str, raw_value: str) -> Any:
 
 def _coerce(col: Any, value: str) -> Any:
     """Minimal type coercion based on the column's Python type."""
-    try:
-        python_type = col.property.columns[0].type.impl_instance.python_type
-    except Exception:
-        try:
-            python_type = col.property.columns[0].type.python_type
-        except Exception:
-            return value
+    python_type = _column_python_type(col)
+    if python_type is None:
+        return value
 
     if python_type is bool:
         return value.lower() in ("true", "1", "yes")

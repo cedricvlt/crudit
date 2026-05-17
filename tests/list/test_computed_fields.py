@@ -111,6 +111,51 @@ async def test_computed_field_visible_in_after_query_hook(seed, engine):
 
 
 @pytest.mark.asyncio
+async def test_filter_by_computed_field_eq(seed, engine):
+    config = ListConfig(
+        login_required=False,
+        computed_fields={"allowed_user_count": _allowed_user_count_subquery},
+        filterable_fields=["allowed_user_count"],
+    )
+    app = _make_app(engine, config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/cities/1/districts?allowed_user_count=1")
+        assert r.status_code == 200
+        ids = [d["id"] for d in r.json()["data"]]
+        assert ids == [1]
+
+
+@pytest.mark.asyncio
+async def test_filter_by_computed_field_gte(seed, engine):
+    config = ListConfig(
+        login_required=False,
+        computed_fields={"allowed_user_count": _allowed_user_count_subquery},
+        filterable_fields=["allowed_user_count"],
+    )
+    app = _make_app(engine, config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/cities/1/districts?allowed_user_count__gte=1")
+        assert r.status_code == 200
+        ids = {d["id"] for d in r.json()["data"]}
+        assert ids == {1}
+
+
+@pytest.mark.asyncio
+async def test_filter_by_computed_field_zero_matches(seed, engine):
+    config = ListConfig(
+        login_required=False,
+        computed_fields={"allowed_user_count": _allowed_user_count_subquery},
+        filterable_fields=["allowed_user_count"],
+    )
+    app = _make_app(engine, config)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/cities/1/districts?allowed_user_count=0")
+        assert r.status_code == 200
+        ids = {d["id"] for d in r.json()["data"]}
+        assert ids == {2}
+
+
+@pytest.mark.asyncio
 async def test_sort_by_computed_field_asc(seed, engine):
     config = ListConfig(
         login_required=False,

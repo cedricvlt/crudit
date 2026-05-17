@@ -1136,7 +1136,7 @@ config = ListConfig(
 
 The same option exists on `ReadConfig`. Crudit validates at registration time that each computed field name is declared on the response schema and does not collide with a column on the model.
 
-Computed field names are automatically added to `sortable_fields` on `list_endpoint`, so `?sort=post_count` and `?sort=-post_count` work out of the box. Filtering and searching on computed fields are not supported.
+Computed field names are automatically added to `sortable_fields` on `list_endpoint`, so `?sort=post_count` and `?sort=-post_count` work out of the box. To filter on a computed field, add it to `filterable_fields` explicitly; all standard operators are supported (`?post_count__gte=5`, `?post_count=0`, etc.). Searching on computed fields is not supported.
 
 ### `CruditContext`
 

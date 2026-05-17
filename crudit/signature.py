@@ -9,19 +9,23 @@ from fastapi import Path, Query
 
 def _get_python_type(col: Any) -> type:
     """Get the Python type of a SQLAlchemy column attribute, defaulting to str."""
-    try:
-        return col.property.columns[0].type.impl_instance.python_type
-    except Exception:
+    for accessor in (
+        lambda c: c.property.columns[0].type.impl_instance.python_type,
+        lambda c: c.property.columns[0].type.python_type,
+        lambda c: c.type.python_type,
+    ):
         try:
-            return col.property.columns[0].type.python_type
-        except Exception:
-            return str
+            return accessor(col)
+        except Exception:  # noqa: BLE001
+            continue
+    return str
 
 
 def _make_filter_params(
     field: str,
     model: Any,
     join_info: Any,
+    computed_fields: dict[str, Any] | None = None,
 ) -> list[inspect.Parameter]:
     """
     Build typed inspect.Parameters for a filterable field and all its operators.
@@ -32,11 +36,17 @@ def _make_filter_params(
     """
     from crudit.joins import resolve_nested_column
 
-    try:
-        col = resolve_nested_column(field, model, join_info)
-        python_type = _get_python_type(col)
-    except Exception:
-        python_type = str
+    if computed_fields and field in computed_fields:
+        try:
+            python_type = _get_python_type(computed_fields[field](model))
+        except Exception:  # noqa: BLE001
+            python_type = str
+    else:
+        try:
+            col = resolve_nested_column(field, model, join_info)
+            python_type = _get_python_type(col)
+        except Exception:
+            python_type = str
 
     has_dot = "." in field
     base_name = field.replace(".", "__") if has_dot else field
@@ -83,6 +93,7 @@ def inject_query_params(
     filterable_fields: list[str],
     model: Any = None,
     join_info: Any = None,
+    computed_fields: dict[str, Any] | None = None,
 ) -> None:
     """
     Extend handler.__signature__ with typed query params for each filterable field.
@@ -108,7 +119,9 @@ def inject_query_params(
     filter_params: list[inspect.Parameter] = []
     for field in filterable_fields:
         if model is not None:
-            filter_params.extend(_make_filter_params(field, model, join_info or JoinInfo()))
+            filter_params.extend(
+                _make_filter_params(field, model, join_info or JoinInfo(), computed_fields)
+            )
         else:
             if "." in field:
                 param_name = field.replace(".", "__")
