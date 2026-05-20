@@ -871,6 +871,8 @@ All list endpoints return the same paginated envelope:
 
 Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must be in the Pydantic schema (auto-joined via `joinedload`).
 
+Columns backed by a string-based SQLAlchemy `TypeDecorator` — such as sqlalchemy_utils' `PhoneNumberType` — are compared as plain text. Such types parse every bound value (e.g. into a `PhoneNumber`), which would otherwise make a filter or search string like `%555%` raise a parse error; crudit casts the column to `String` so filtering and search operate on the stored text instead.
+
 All filter params — including operator-suffixed variants — are fully typed in the OpenAPI schema based on the SQLAlchemy column type. For example, `age__gte` is documented as `integer`, `created_at__lte` as `date`, and `name__isnull` as `boolean`. This means Swagger UI and generated clients show the correct input types with no extra configuration.
 
 ### OpenAPI error responses

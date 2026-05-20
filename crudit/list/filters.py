@@ -4,9 +4,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_
+from sqlalchemy import String, and_, cast, or_
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
+from sqlalchemy.types import TypeDecorator
 
 from crudit.joins import JoinInfo, resolve_nested_column
 from crudit.types import FilterFn
@@ -236,6 +237,36 @@ def _is_datetime_col(col: Any) -> bool:
     return _column_python_type(col) is datetime
 
 
+def _column_sql_type(col: Any) -> Any:
+    """Return the SQL type instance of an ORM column or column-like expression."""
+    for accessor in (lambda c: c.property.columns[0].type, lambda c: c.type):
+        try:
+            return accessor(col)
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def as_comparable(col: Any) -> Any:
+    """Cast string-backed `TypeDecorator` columns to plain `String` for comparison.
+
+    Custom types such as sqlalchemy_utils' `PhoneNumberType` are `TypeDecorator`s
+    whose `process_bind_param` parses any bound literal (e.g. into a `PhoneNumber`).
+    A filter/search string like ``%555%`` is not a valid phone number, so binding it
+    through the decorator raises a parse error. Casting the column to `String` makes
+    the comparison operate on the stored text and binds the literal as plain text,
+    bypassing the decorator. Non-decorator columns are returned unchanged.
+    """
+    sql_type = _column_sql_type(col)
+    if isinstance(sql_type, TypeDecorator):
+        try:
+            if sql_type.impl_instance.python_type is str:
+                return cast(col, String)
+        except Exception:  # noqa: BLE001
+            pass
+    return col
+
+
 def _column_python_type(col: Any) -> type | None:
     """Return the Python type of a column or column-like expression.
 
@@ -266,6 +297,7 @@ def _is_date_only_string(value: str) -> bool:
 def _build_expression(col: Any, operator: str, raw_value: str) -> Any:
     if operator in _DATE_PERIOD_OPERATORS:
         return _build_date_period_expression(col, operator, raw_value)
+    col = as_comparable(col)
     if operator == "eq":
         return col == _coerce(col, raw_value)
     if operator == "ne":
