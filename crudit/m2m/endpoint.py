@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import Column, Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from crudit.joins import resolve_joins
 from crudit.m2m.config import M2MConfig
 from crudit.types import PermissionDepFn
 from crudit.utils import bind_perms, get_error_responses, model_snake_name
@@ -94,6 +95,12 @@ def m2m_router(
 
     db_dep = Depends(get_db)
 
+    # Resolve nested-field joins on the child schema once, at registration
+    # time (mirrors read/list endpoints). Without this, nested BaseModel
+    # fields trigger lazy loads during serialization, which raise under an
+    # async session.
+    join_info = resolve_joins(child_model, child_schema)
+
     # -- helpers --
 
     async def _get_parent_or_404(db: AsyncSession, parent_id: int) -> None:
@@ -102,13 +109,16 @@ def m2m_router(
             raise HTTPException(status_code=404, detail="Not found.")
 
     async def _list_children(db: AsyncSession, parent_id: int) -> list[BaseModel]:
-        rows = (
-            await db.scalars(
-                select(child_model)
-                .join(association_table, child_model.id == child_fk_col)
-                .where(parent_fk_col == parent_id)
-            )
-        ).all()
+        query = (
+            select(child_model)
+            .join(association_table, child_model.id == child_fk_col)
+            .where(parent_fk_col == parent_id)
+        )
+        options = join_info.eager_load_options(child_model, set())
+        if options:
+            query = query.options(*options)
+        rows = (await db.scalars(query)).unique().all()
+        join_info.sort_o2m_collections(list(rows))
         return [child_schema.model_validate(row, from_attributes=True) for row in rows]
 
     # -- endpoints --

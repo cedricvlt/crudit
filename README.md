@@ -1684,6 +1684,8 @@ The parent path parameter name and child path segment are inferred automatically
 
 **GET** — returns a JSON array of `child_schema` objects.
 
+`child_schema` may declare nested relationship fields (e.g. `company: CompanySchema | None`). They are resolved with the same eager-loading logic as `read`/`list` endpoints, so nested objects are populated in both the GET response and the POST response without triggering lazy loads under the async session.
+
 **POST** — body: `{"ids": [1, 2, 3]}`. Returns the updated list. Raises **422** if any ID does not exist in the child table. Adding already-linked IDs is a no-op (idempotent).
 
 **DELETE** — body: `{"ids": [2]}`. Returns **204 No Content**. Removing IDs that are not linked is a no-op (idempotent).
