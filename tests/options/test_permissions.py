@@ -10,7 +10,6 @@ async def test_login_required_no_user_returns_401(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=True,
-            label_field="name",
         ),
         current_user=None,
     ) as client:
@@ -23,7 +22,6 @@ async def test_login_not_required_no_user_succeeds(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
         ),
         current_user=None,
     ) as client:
@@ -44,7 +42,6 @@ async def test_permission_dep_deny(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=True,
-            label_field="name",
             permissions=["core:district:view"],
         ),
         current_user=User(id=1, name="Alice", company_id=1),
@@ -66,7 +63,6 @@ async def test_permission_dep_allow(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=True,
-            label_field="name",
             permissions=["core:district:view"],
         ),
         current_user=User(id=1, name="Alice", company_id=1),
@@ -84,7 +80,6 @@ async def test_company_row_level_filter(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=True,
-            label_field="name",
         ),
         current_user=user1,
     ) as client:
@@ -106,7 +101,6 @@ async def test_allowed_users_row_level_filter(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=True,
-            label_field="name",
         ),
         current_user=user3,
     ) as client:

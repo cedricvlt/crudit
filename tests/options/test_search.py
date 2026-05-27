@@ -10,7 +10,6 @@ async def test_search_by_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             search_fields=["name"],
         )
     ) as client:
@@ -26,7 +25,6 @@ async def test_search_no_match(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             search_fields=["name"],
         )
     ) as client:
@@ -44,7 +42,6 @@ async def test_custom_search_fn(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             search_fn=my_search,
         )
     ) as client:

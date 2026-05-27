@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
-from sqlalchemy import func, select
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic.alias_generators import to_camel
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,13 +24,23 @@ from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
 from crudit.permissions import apply_permissions
-from crudit.schemas import OffsetPaginatedResponse, OptionItem
+from crudit.schemas import OffsetPaginatedResponse
 from crudit.signature import inject_path_params, inject_query_params
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
 
 
 class _DefaultOptionSchema(BaseModel):
-    name: str
+    """Zero-config option schema: serialises to {id, label} with label from `name`."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: Any
+    name: str = Field(exclude=True)
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        return str(self.name)
 
 
 def options_endpoint(
@@ -43,34 +54,38 @@ def options_endpoint(
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
     operation_id: str | None = None,
-    schema: type[BaseModel] = _DefaultOptionSchema,
+    schema: type[BaseModel] | None = None,
     get_db: Callable,
 ) -> None:
     """
     Register a paginated options GET endpoint on `router`.
 
-    Returns items shaped as {id, label}. The label comes from either
-    config.label_field (a column name) or config.label_fn (a callable that
-    receives the ORM row and returns a str).
+    Rows are serialised with `schema`, which must expose a `label` field — either
+    a plain field (e.g. ``label: str = Field(validation_alias="name")``) or a
+    ``@computed_field`` built from other declared fields. The schema also drives
+    join resolution, so any nested relationship fields it declares are
+    eager-loaded.
 
-    Pass `schema` when label_fn or filters/sort need related objects — it is
-    used solely for join resolution, not for serialisation. Defaults to a
-    minimal schema with only a `name` field.
+    When `schema` is omitted, items are shaped as {id, label} with the label read
+    from the model's `name` column. If the model has no `name` column, an explicit
+    `schema` is required.
     """
-    if config.label_field is None and config.label_fn is None:
-        config.label_field = "name"
-    elif config.label_field is not None and config.label_fn is not None:
+    if schema is None and "name" not in inspect(model).columns:
         raise CruditConfigError(
-            "OptionsConfig requires either label_field or label_fn, not both."
+            f"options_endpoint for {model.__name__} requires an explicit `schema` with a "
+            "`label` field: no `schema` was given and the model has no `name` column to "
+            "default the label from."
         )
 
-    join_info: JoinInfo = resolve_joins(model, schema)
-    auto_sortable = collect_sortable_field_paths(model, schema, join_info)
+    effective_schema = schema or _DefaultOptionSchema
+    join_info: JoinInfo = resolve_joins(model, effective_schema)
+    auto_sortable = collect_sortable_field_paths(model, effective_schema, join_info)
     config.sortable_fields = list(dict.fromkeys([*auto_sortable, *config.sortable_fields]))
 
     _model = model
     _config = config
     _join_info = join_info
+    _schema = effective_schema
     _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
@@ -157,7 +172,8 @@ def options_endpoint(
         if _config.after_query is not None:
             rows = await call_hook(_config.after_query, rows, ctx)
 
-        data = [_build_item(row, _config) for row in rows]
+        _join_info.sort_o2m_collections(rows)
+        data = [_schema.model_validate(row, from_attributes=True) for row in rows]
 
         return OffsetPaginatedResponse(
             data=data,
@@ -177,7 +193,7 @@ def options_endpoint(
         path,
         _handler,
         methods=["GET"],
-        response_model=OffsetPaginatedResponse[OptionItem],
+        response_model=OffsetPaginatedResponse[effective_schema],
         response_model_by_alias=True,
         tags=_config.tags or None,
         summary=summary or f"List {model_name} option items for selection.",
@@ -185,11 +201,3 @@ def options_endpoint(
         dependencies=deps,
         responses=get_error_responses(*([401] if login_dep else []), 403),
     )
-
-
-def _build_item(row: Any, config: OptionsConfig) -> OptionItem:
-    if config.label_fn is not None:
-        label = str(config.label_fn(row))
-    else:
-        label = str(getattr(row, config.label_field, "") or "")
-    return OptionItem(id=row.id, label=label)

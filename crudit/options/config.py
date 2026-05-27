@@ -3,15 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from crudit.types import AfterFn, FilterFn, HookFn, LabelFn, SearchFn
+from crudit.types import AfterFn, FilterFn, HookFn, SearchFn
 
 
 @dataclass
 class OptionsConfig:
-    # Label — exactly one must be set
-    label_field: str | None = None
-    label_fn: LabelFn | None = None
-
     # Permissions
     permissions: list[str] = field(default_factory=list)
     login_required: bool = True

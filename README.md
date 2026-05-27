@@ -254,7 +254,7 @@ router = crud_router(
     read_schema=DistrictSchema,            # GET  /{id}     (read + create/update output)
     create_schema=DistrictCreateSchema,    # POST /         (create input)
     update_schema=DistrictUpdateSchema,    # PATCH /{id}    (update input)
-    option_schema=DistrictSchema,          # GET  /options  (join resolution only)
+    option_schema=DistrictSchema,          # GET  /options  (response model + join resolution; must expose `label`)
 
     # --- db dependency ---
     get_db=get_db,
@@ -301,7 +301,9 @@ router = crud_router(
 )
 ```
 
-No `OptionsConfig` is needed — it defaults to `label_field="name"`. Pass an explicit `options=OptionsConfig(...)` to customise the label or any other field. Pass `option_schema=MySchema` when the options endpoint needs join resolution (e.g. for `label_fn` or filter/sort on related fields); defaults to a minimal schema with `name: str`.
+No `OptionsConfig` is needed. Pass an explicit `options=OptionsConfig(...)` to add filtering, sorting, search, hooks, or auth.
+
+By default the options endpoint returns `{id, label}` items with the label read from the model's `name` column. Pass `option_schema=MySchema` to control serialisation: the schema becomes the response model and drives join resolution (its nested relationship fields are eager-loaded). The schema must expose `id` and a `label` field — either a plain field (e.g. `label: str = Field(validation_alias="name")`) or a `@computed_field`. If the model has no `name` column, `option_schema` is required.
 
 ### Restricting core endpoints
 
@@ -396,12 +398,12 @@ router = crud_router(
 | create | `create_schema` | `read_schema` |
 | update | `update_schema` | `read_schema` |
 | delete | — | — (204) |
-| options | — | `OptionItem` (label from `OptionsConfig`, defaults to `"name"`); join resolution uses `option_schema` |
+| options | — | `option_schema` if provided, else `{id, label}` with the label from the model's `name` column |
 | reorder | `{ids: [...]}` | — (204) |
 
 ### Notes
 
-- `options` defaults to `label_field="name"` when no `OptionsConfig` is provided. Pass `options=OptionsConfig(label_field="...")` or `options=OptionsConfig(label_fn=...)` to customise.
+- `options` returns `{id, label}` (label from the model's `name` column) when no `option_schema` is provided. Pass `option_schema=MySchema` with a `label` field (plain or `@computed_field`) to customise.
 - `reorder` requires the model to have a `sort_order` column.
 - Paths are always relative to the router prefix set in `app.include_router(..., prefix=...)`.
 
@@ -1087,7 +1089,7 @@ config = ListConfig(
 )
 ```
 
-The same hooks apply to `OptionsConfig`. `after_query` receives ORM model instances — after the hook the endpoint converts them to `{id, label}` items.
+The same hooks apply to `OptionsConfig`. `after_query` receives ORM model instances — after the hook the endpoint serialises them with the response schema.
 
 ### Read endpoint hooks
 
@@ -1236,10 +1238,6 @@ list_endpoint(..., schema=DistrictSchema, config=ListConfig())
 ```python
 @dataclass
 class OptionsConfig:
-    # Label — at most one may be set; defaults to label_field="name" when neither is provided
-    label_field: str | None          # model column name used as the label
-    label_fn: LabelFn | None         # (row) -> str — callable for computed labels
-
     # Auth
     login_required: bool             # default True — 401 if no user
     permissions: list[str]           # required permission strings
@@ -1265,7 +1263,7 @@ class OptionsConfig:
     tags: list[str]
 ```
 
-At most one of `label_field` or `label_fn` may be set. When neither is provided, `label_field` defaults to `"name"`. Setting both raises a `CruditConfigError` at registration time.
+The `label` is supplied by the response schema, not by `OptionsConfig` (see `options_endpoint()` below).
 
 ---
 
@@ -1282,12 +1280,39 @@ def options_endpoint(
     login_dep: Callable | None = None,       # FastAPI dependency returning current_user
     permission_dep: Callable | None = None,  # plain async callable, wrapped with Depends()
     summary: str | None = None,
-    schema: type[BaseModel] = _DefaultOptionSchema,  # for join resolution only; defaults to {name: str}
-    get_db: Callable,                                # FastAPI dependency returning AsyncSession
+    schema: type[BaseModel] | None = None,  # response model + join resolution; must expose `label`
+    get_db: Callable,                       # FastAPI dependency returning AsyncSession
 ) -> None:
 ```
 
-`schema` is used only for join resolution (same mechanism as `list_endpoint`), not for serialisation. It defaults to a minimal schema with a `name: str` field — pass an explicit schema when `label_fn` or filter/sort fields access related objects. The endpoint always returns `OffsetPaginatedResponse[OptionItem]` (no `page` or `itemsPerPage`).
+Rows are serialised with `schema`, which must expose a `label` field. The schema also drives join resolution (same mechanism as `list_endpoint`), so any nested relationship fields it declares are eager-loaded. The response is `OffsetPaginatedResponse[schema]` (no `page` or `itemsPerPage`).
+
+When `schema` is omitted, items are shaped as `{id, label}` with the label read from the model's `name` column. If the model has no `name` column, an explicit `schema` is required (otherwise `options_endpoint` raises `CruditConfigError` at registration time). `crud_router` wires its `option_schema` argument straight to this parameter.
+
+The `label` can be a plain field (mapped from a column via `validation_alias`) or a `@computed_field` built from other declared fields:
+
+```python
+from pydantic import BaseModel, Field, computed_field
+
+# Plain field via alias — subclassing OptionItem is fine in this form:
+class DistrictOption(BaseModel):
+    id: int
+    label: str = Field(validation_alias="name")
+
+# Computed label — subclass BaseModel, NOT OptionItem: Pydantic forbids
+# overriding the inherited `label` field with a computed field. Feed the
+# label from excluded fields so the output stays {id, label}; declaring
+# `city` also triggers the join automatically.
+class DistrictOption(BaseModel):
+    id: int
+    name: str = Field(exclude=True)
+    city: CitySchema = Field(exclude=True)
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        return f"{self.city.name} — {self.name}"
+```
 
 **Usage example:**
 
@@ -1300,17 +1325,14 @@ options_endpoint(
     model=District,
     config=OptionsConfig(
         login_required=False,
-        # Simple column label:
-        label_field="name",
-        # — or — computed label using related data:
-        # label_fn=lambda row: f"{row.city.name} — {row.name}",
         sortable_fields=["name"],
         search_fields=["name"],
         filterable_fields=["is_active"],
     ),
     path_filters={"city_id": "city_id"},
     login_dep=get_current_user,
-    schema=DistrictSchema,  # needed when label_fn uses row.city
+    # schema omitted → {id, label} from the model's `name` column.
+    # Pass schema=DistrictOption to build the label from related data.
     get_db=get_db,
 )
 ```

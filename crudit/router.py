@@ -98,7 +98,7 @@ def crud_router(
       read    → read_schema
       create  → create_schema (input) + read_schema (output)
       update  → update_schema (input) + read_schema (output)
-      options → option_schema for join resolution (output is always OptionItem)
+      options → option_schema (label/serialisation + joins); {id, label} from name when omitted
       reorder → no schema
     """
     active_crud = set(crud_endpoints if crud_endpoints is not None else _CRUD_ENDPOINTS)

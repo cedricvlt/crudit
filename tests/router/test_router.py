@@ -126,6 +126,31 @@ async def test_options_endpoint_registered(seed, make_client):
         assert all("id" in it and "label" in it for it in r.json()["data"])
 
 
+async def test_option_schema_used_as_output(seed, make_client):
+    from pydantic import BaseModel, Field
+
+    class DistrictOptionSchema(BaseModel):
+        id: int
+        label: str = Field(validation_alias="name")
+        city: CitySchema
+
+    async with make_client(
+        model=District,
+        list_item_schema=DistrictSchema,
+        option_schema=DistrictOptionSchema,
+        crud_endpoints=[],
+        extra_endpoints=["options"],
+        shared=SharedConfig(login_required=False),
+    ) as client:
+        r = await client.get("/districts/options")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert len(data) > 0
+        for it in data:
+            assert set(it.keys()) == {"id", "label", "city"}
+            assert "name" in it["city"]
+
+
 async def test_reorder_endpoint_registered(seed, make_client):
     async with make_client(extra_endpoints=["reorder"], **_FULL) as client:
         r = await client.post("/districts/reorder", json={"ids": [2, 1]})

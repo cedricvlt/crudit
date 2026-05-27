@@ -10,7 +10,6 @@ async def test_offset_limit_pagination(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             sortable_fields=["name"],
         )
     ) as client:
@@ -27,7 +26,6 @@ async def test_second_page_via_offset(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             sortable_fields=["name"],
         )
     ) as client:
@@ -43,7 +41,6 @@ async def test_no_more_when_exhausted(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
         )
     ) as client:
         r = await client.get("/cities/1/districts?limit=100")

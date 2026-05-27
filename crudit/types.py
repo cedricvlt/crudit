@@ -42,6 +42,3 @@ ReorderHookFn = Callable[[list[Any], Request, Any], None]
 
 # plain FastAPI dependency callable (same form as login_dep)
 PermissionDepFn = Callable[..., Any]
-
-# (row) -> str  (options label builder)
-LabelFn = Callable[[Any], str]

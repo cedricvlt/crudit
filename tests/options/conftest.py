@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crudit import OptionsConfig, options_endpoint
-from tests.conftest import District, DistrictSchema
+from tests.conftest import District
 
 
 _DEFAULT_PATH_FILTERS = {"city_id": "city_id"}
@@ -42,7 +42,7 @@ def make_app(
         path_filters=path_filters,
         login_dep=get_current_user,
         permission_dep=permission_dep,
-        schema=schema or DistrictSchema,
+        schema=schema,
         get_db=get_db,
     )
     return app
@@ -57,7 +57,9 @@ def make_client(engine):
         permission_dep: Any = None,
         path_filters: dict[str, str] | None = _DEFAULT_PATH_FILTERS,
     ) -> AsyncClient:
-        app = make_app(engine, config, current_user, schema, permission_dep, path_filters)
+        app = make_app(
+            engine, config, current_user, schema, permission_dep, path_filters
+        )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
     return _make_client

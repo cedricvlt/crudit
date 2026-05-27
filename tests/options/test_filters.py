@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from crudit import OptionsConfig
+from tests.conftest import DistrictSchema
 
 
 @pytest.mark.asyncio
@@ -10,7 +11,6 @@ async def test_filter_by_plain_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["is_active"],
         )
     ) as client:
@@ -26,9 +26,9 @@ async def test_filter_by_nested_field(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["city.name"],
-        )
+        ),
+        schema=DistrictSchema,
     ) as client:
         r = await client.get("/cities/1/districts?city.name=Paris")
         assert r.status_code == 200
@@ -41,7 +41,6 @@ async def test_unknown_filter_returns_400(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["name"],
         )
     ) as client:
@@ -59,7 +58,6 @@ async def test_custom_filter_fn(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["is_active"],
             filter_fns={"is_active": active_filter},
         )
@@ -76,7 +74,6 @@ async def test_multi_value_filter_as_or(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["company_id"],
         ),
         path_filters=None,
@@ -93,7 +90,6 @@ async def test_default_filters(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             default_filters={"is_active": True},
         )
     ) as client:
@@ -109,7 +105,6 @@ async def test_year_filter(seed, make_client):
     async with await make_client(
         OptionsConfig(
             login_required=False,
-            label_field="name",
             filterable_fields=["created_at"],
         )
     ) as client:

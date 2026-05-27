@@ -550,7 +550,6 @@ class TestOptionsOpenAPI:
             "/items/options",
             _Item,
             OptionsConfig(
-                label_field="name",
                 filterable_fields=filterable_fields or [],
                 permissions=_PERMISSIONS,
             ),
@@ -728,7 +727,6 @@ class TestPathFiltersOpenAPI:
             "/cities/{city_id}/items/options",
             _Item,
             OptionsConfig(
-                label_field="name",
                 filterable_fields=["name"],
                 permissions=_PERMISSIONS,
             ),
@@ -966,7 +964,7 @@ def _routes_with_login(register_with_login: bool):
             router,
             "/items/options",
             _Item,
-            OptionsConfig(label_field="name"),
+            OptionsConfig(),
             login_dep=login,
             get_db=_get_db,
         )
@@ -1201,7 +1199,7 @@ class TestOperationIdDefaults:
         def register(router):
             options_endpoint(
                 router, "/items/options", _Item,
-                OptionsConfig(label_field="name"), get_db=_get_db,
+                OptionsConfig(), get_db=_get_db,
             )
 
         schema = _build_schema(register)
