@@ -360,3 +360,44 @@ async def test_m2m_filter_no_row_duplication(seed, make_client):
         body = r.json()
         assert [d["name"] for d in body["data"]] == ["Montmartre"]
         assert body["totalCount"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Range operators (lt/lte/gt/gte) are rejected on id (PK/FK) columns.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_range_operator_rejected_on_pk_id(seed, make_client):
+    async with await make_client(
+        ListConfig(filterable_fields=["id"], login_required=False)
+    ) as client:
+        r = await client.get("/cities/1/districts?id__gte=1")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_range_operator_rejected_on_fk_id(seed, make_client):
+    async with await make_client(
+        ListConfig(filterable_fields=["company_id"], login_required=False),
+        path_filters=None,
+    ) as client:
+        r = await client.get("/cities/1/districts?company_id__lt=5")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_range_operator_rejected_on_m2m_id(seed, make_client):
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id__gt=1")
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_eq_and_in_still_allowed_on_pk_id(seed, make_client):
+    # Only range ops are blocked on id columns; equality/in remain valid.
+    async with await make_client(
+        ListConfig(filterable_fields=["id"], login_required=False)
+    ) as client:
+        r = await client.get("/cities/1/districts?id__in=1,2,3")
+        assert r.status_code == 200

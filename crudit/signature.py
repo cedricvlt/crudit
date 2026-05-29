@@ -34,8 +34,9 @@ def _make_filter_params(
     Operator-suffixed params (e.g. name__ilike, age__gte) are added for each
     operator that makes sense for the column type.
     """
-    from crudit.joins import resolve_filter_path
+    from crudit.joins import is_id_column, resolve_filter_path
 
+    is_id = False
     if computed_fields and field in computed_fields:
         try:
             python_type = _get_python_type(computed_fields[field](model))
@@ -45,6 +46,7 @@ def _make_filter_params(
         try:
             col, _ = resolve_filter_path(field, model, join_info)
             python_type = _get_python_type(col)
+            is_id = is_id_column(col)
         except Exception:
             python_type = str
 
@@ -67,9 +69,13 @@ def _make_filter_params(
 
     params = [_param("", list[python_type] | None)]
     params.append(_param("ne", list[python_type] | None))
+    # `__in` takes a single comma-separated string (e.g. ?id__in=1,2,3); the
+    # runtime splits it on "," and coerces each value to the leaf column type.
+    params.append(_param("in", str | None))
     params.append(_param("isnull", bool | None))
 
-    if python_type in (int, float):
+    if python_type in (int, float) and not is_id:
+        # Range operators are meaningless on identifier columns (PK/FK).
         for op in ("lt", "lte", "gt", "gte"):
             params.append(_param(op, python_type | None))
     elif python_type is str:

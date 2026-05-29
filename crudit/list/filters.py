@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 from sqlalchemy.types import TypeDecorator
 
-from crudit.joins import JoinInfo, resolve_filter_path
+from crudit.joins import JoinInfo, is_id_column, resolve_filter_path
 from crudit.types import FilterFn
 
 
@@ -50,6 +50,8 @@ _RESERVED_PARAMS = frozenset(
 
 _DATE_PERIOD_OPERATORS = frozenset({"year", "quarter", "month", "week", "relative"})
 
+_RANGE_OPERATORS = frozenset({"lt", "lte", "gt", "gte"})
+
 _OPERATORS = frozenset(
     {"eq", "ne", "lt", "lte", "gt", "gte", "in", "like", "ilike", "isnull"}
 ) | _DATE_PERIOD_OPERATORS
@@ -87,6 +89,11 @@ def apply_filters(
             col, wrappers = computed_fields[field_path](model), []
         else:
             col, wrappers = resolve_filter_path(field_path, model, join_info)
+        if operator in _RANGE_OPERATORS and is_id_column(col):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Operator '{operator}' is not supported on id field '{field_path}'.",
+            )
         if len(raw_values) == 1:
             predicate = _build_expression(col, operator, raw_values[0])
         else:

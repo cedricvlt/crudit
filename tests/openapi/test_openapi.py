@@ -267,27 +267,46 @@ class TestListOpenAPI:
         assert "name__isnull" in params
 
     def test_integer_filter_operator_params_appear(self):
+        # sort_order is a plain (non-id) integer column, so it gets range ops.
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["sort_order"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        params = _query_params(op)
+        assert "sort_order__gte" in params
+        assert "sort_order__lte" in params
+        assert "sort_order__gt" in params
+        assert "sort_order__lt" in params
+        assert "sort_order__ne" in params
+        assert "sort_order__isnull" in params
+
+    def test_integer_operator_params_have_integer_type(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["sort_order"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        assert _non_null_schema(_param_schema(op, "sort_order__gte")).get("type") == "integer"
+        assert _non_null_schema(_param_schema(op, "sort_order__lt")).get("type") == "integer"
+
+    def test_id_pk_column_has_no_range_operator_params(self):
+        # Range ops (lt/lte/gt/gte) are meaningless on a primary-key column and
+        # must not be emitted; equality-style ops remain.
         def register(router):
             list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
 
         schema = _build_schema(register)
         op = _op(schema, "get", "/items")
         params = _query_params(op)
-        assert "id__gte" in params
-        assert "id__lte" in params
-        assert "id__gt" in params
-        assert "id__lt" in params
+        assert "id" in params
         assert "id__ne" in params
+        assert "id__in" in params
         assert "id__isnull" in params
-
-    def test_integer_operator_params_have_integer_type(self):
-        def register(router):
-            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
-
-        schema = _build_schema(register)
-        op = _op(schema, "get", "/items")
-        assert _non_null_schema(_param_schema(op, "id__gte")).get("type") == "integer"
-        assert _non_null_schema(_param_schema(op, "id__lt")).get("type") == "integer"
+        assert "id__gte" not in params
+        assert "id__lte" not in params
+        assert "id__gt" not in params
+        assert "id__lt" not in params
 
     def test_isnull_param_has_boolean_type(self):
         def register(router):
@@ -320,6 +339,97 @@ class TestListOpenAPI:
         schema = _build_schema(register)
         op = _op(schema, "get", "/items")
         assert _non_null_schema(_param_schema(op, "created_at__year")).get("type") == "integer"
+
+    def test_in_operator_param_appears(self):
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["name", "id"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        params = _query_params(op)
+        assert "name__in" in params
+        assert "id__in" in params
+
+    def test_in_operator_param_has_string_type(self):
+        # __in takes a single comma-separated string (e.g. ?id__in=1,2,3),
+        # regardless of the leaf column's type.
+        def register(router):
+            list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
+
+        schema = _build_schema(register)
+        op = _op(schema, "get", "/items")
+        assert _non_null_schema(_param_schema(op, "id__in")).get("type") == "string"
+
+
+# ---------------------------------------------------------------------------
+# Collection (o2m / m2m) filter fields — OpenAPI representation
+# ---------------------------------------------------------------------------
+
+
+class TestCollectionFilterOpenAPI:
+    """A filter that traverses a collection (e.g. m2m ``allowed_users.id``) must
+    expose its operators in OpenAPI: the dotted param uses the dotted alias, the
+    leaf column type is resolved (id -> integer) and ``__in`` is present and
+    typed as a comma-separated string. The collection need not be in the schema."""
+
+    def _register(self, router: APIRouter, filterable_fields: list[str]) -> None:
+        from tests.conftest import District, DistrictSchema
+
+        list_endpoint(
+            router,
+            "/cities/{city_id}/districts",
+            District,
+            DistrictSchema,
+            ListConfig(filterable_fields=filterable_fields),
+            path_filters={"city_id": "city_id"},
+            get_db=_get_db,
+        )
+
+    def _op_for(self, filterable_fields: list[str]) -> dict:
+        def register(router):
+            self._register(router, filterable_fields)
+
+        schema = _build_schema(register)
+        return _op(schema, "get", "/cities/{city_id}/districts")
+
+    def test_collection_leaf_uses_dotted_alias(self):
+        op = self._op_for(["allowed_users.id"])
+        assert "allowed_users.id" in _query_params(op)
+
+    def test_collection_int_leaf_has_integer_type(self):
+        op = self._op_for(["allowed_users.id"])
+        s = _non_null_schema(_param_schema(op, "allowed_users.id"))
+        assert s.get("type") == "array"
+        assert s.get("items", {}).get("type") == "integer"
+
+    def test_collection_in_operator_appears_with_string_type(self):
+        # The user's headline case: allowed_users.id__in must be documented.
+        op = self._op_for(["allowed_users.id"])
+        assert "allowed_users.id__in" in _query_params(op)
+        assert _non_null_schema(_param_schema(op, "allowed_users.id__in")).get("type") == "string"
+
+    def test_collection_id_leaf_has_no_range_operators(self):
+        # The collection leaf allowed_users.id is a primary key — no range ops.
+        op = self._op_for(["allowed_users.id"])
+        params = _query_params(op)
+        assert "allowed_users.id__in" in params
+        for suffix in ("gte", "lte", "gt", "lt"):
+            assert f"allowed_users.id__{suffix}" not in params
+
+    def test_collection_str_leaf_gets_string_operators(self):
+        op = self._op_for(["allowed_users.name"])
+        params = _query_params(op)
+        assert "allowed_users.name__ilike" in params
+        assert "allowed_users.name__like" in params
+
+    def test_collection_then_m2o_leaf_type_resolved(self):
+        # allowed_users (m2m) -> company (m2o) -> name (str)
+        op = self._op_for(["allowed_users.company.name"])
+        params = _query_params(op)
+        assert "allowed_users.company.name" in params
+        assert "allowed_users.company.name__in" in params
+        s = _non_null_schema(_param_schema(op, "allowed_users.company.name"))
+        assert s.get("items", {}).get("type") == "string"
 
 
 # ---------------------------------------------------------------------------
