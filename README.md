@@ -1743,6 +1743,30 @@ The parent path parameter name and child path segment are inferred automatically
 | `dependencies` | `list[Any]` | `[]` | Extra FastAPI `Depends(...)` objects applied to every route. |
 | `login_required` | `bool` | `True` | When `True`, the `login_dep` is enforced on every route. |
 | `permissions` | `list[str]` | `[]` | Permission codes passed to `permission_dep`. |
+| `after_add` | `M2MHookFn \| None` | `None` | Called after links are inserted, before commit. See [Hooks](#hooks-5). |
+| `after_remove` | `M2MHookFn \| None` | `None` | Called after links are deleted, before commit. See [Hooks](#hooks-5). |
+
+### Hooks
+
+`after_add` and `after_remove` run inside the same transaction as the link changes, **after** the `INSERT`/`DELETE` and **before** `db.commit()`. Both may be sync or async (crudit awaits accordingly). The signature is:
+
+```python
+def hook(parent_id: int, child_ids: list[int], session: AsyncSession, current_user: Any) -> Any: ...
+```
+
+- `parent_id` — the parent path-parameter value.
+- `child_ids` — for `after_add`, only the ids **actually inserted** (already-linked ids are filtered out); for `after_remove`, the requested ids verbatim (the operation is idempotent, so they may not all have been linked).
+- `session` — the endpoint's `AsyncSession`. Writes made through it are committed together with the link change.
+- `current_user` — the value resolved by `login_dep`, or `None` when no `login_dep` is configured.
+
+Because both hooks share the request transaction, raising from a hook rolls back the link change along with anything the hook wrote. The hooks fire only when there is real work to do: `after_add` is skipped when no new links are inserted (empty body or all ids already linked), and `after_remove` is skipped for an empty body.
+
+```python
+async def after_add(parent_id, child_ids, session, current_user):
+    session.add(AuditLog(action="link", parent_id=parent_id, child_ids=child_ids))
+
+config = M2MConfig(after_add=after_add)
+```
 
 ### `m2m_router()` signature
 

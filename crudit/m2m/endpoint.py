@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from crudit.joins import resolve_joins
 from crudit.m2m.config import M2MConfig
 from crudit.types import PermissionDepFn
-from crudit.utils import bind_perms, get_error_responses, model_snake_name
+from crudit.utils import (
+    bind_perms,
+    call_hook,
+    get_error_responses,
+    model_snake_name,
+    user_dep_or_none,
+)
 
 
 class M2MIdsBody(BaseModel):
@@ -94,6 +100,7 @@ def m2m_router(
     remove_op_id = cfg.remove_operation_id or f"remove_{op_id_base}"
 
     db_dep = Depends(get_db)
+    user_dep = user_dep_or_none(login_dep)
 
     # Resolve nested-field joins on the child schema once, at registration
     # time (mirrors read/list endpoints). Without this, nested BaseModel
@@ -134,6 +141,7 @@ def m2m_router(
     async def add_endpoint(
         body: M2MIdsBody = Body(...),
         db: AsyncSession = db_dep,
+        current_user: Any = user_dep,
         **path_params: int,
     ) -> list[child_schema]:  # type: ignore[valid-type]
         parent_id = path_params[parent_pk_param]
@@ -171,6 +179,8 @@ def m2m_router(
                         [{parent_fk_col.name: parent_id, child_fk_col.name: cid} for cid in new_ids]
                     )
                 )
+                if cfg.after_add is not None:
+                    await call_hook(cfg.after_add, parent_id, new_ids, db, current_user)
             await db.commit()
 
         return await _list_children(db, parent_id)
@@ -178,6 +188,7 @@ def m2m_router(
     async def remove_endpoint(
         body: M2MIdsBody = Body(...),
         db: AsyncSession = db_dep,
+        current_user: Any = user_dep,
         **path_params: int,
     ) -> None:
         parent_id = path_params[parent_pk_param]
@@ -190,6 +201,8 @@ def m2m_router(
                     child_fk_col.in_(body.ids),
                 )
             )
+            if cfg.after_remove is not None:
+                await call_hook(cfg.after_remove, parent_id, body.ids, db, current_user)
             await db.commit()
 
     # -- inject path parameter into signatures --

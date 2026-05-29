@@ -23,6 +23,8 @@ def make_app(
     login_required: bool = False,
     permission_dep=None,
     child_path_segment: str | None = None,
+    after_add=None,
+    after_remove=None,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -41,6 +43,8 @@ def make_app(
         config=M2MConfig(
             login_required=login_required,
             child_path_segment=child_path_segment,
+            after_add=after_add,
+            after_remove=after_remove,
         ),
         login_dep=login_dep,
         permission_dep=permission_dep,
@@ -56,6 +60,8 @@ def make_client(engine):
         login_required: bool = False,
         permission_dep=None,
         child_path_segment: str | None = None,
+        after_add=None,
+        after_remove=None,
     ) -> AsyncClient:
         app = make_app(
             engine,
@@ -63,6 +69,8 @@ def make_client(engine):
             login_required=login_required,
             permission_dep=permission_dep,
             child_path_segment=child_path_segment,
+            after_add=after_add,
+            after_remove=after_remove,
         )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

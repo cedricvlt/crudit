@@ -40,5 +40,8 @@ DeleteHookFn = Callable[[Any, Request, Any], None]
 # (objects, request, current_user) -> None  (reorder hooks)
 ReorderHookFn = Callable[[list[Any], Request, Any], None]
 
+# (parent_id, child_ids, session, current_user) -> None  (m2m add/remove hooks)
+M2MHookFn = Callable[[int, list[int], Any, Any], Any]
+
 # plain FastAPI dependency callable (same form as login_dep)
 PermissionDepFn = Callable[..., Any]
