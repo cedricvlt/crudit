@@ -284,3 +284,79 @@ async def test_invalid_relative(seed, make_client):
     async with await make_client(_DATE_CONFIG) as client:
         r = await client.get("/cities/1/districts?created_at__relative=someday")
         assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Collection (o2m / m2m) relationship filters via EXISTS subqueries.
+# Seed: city 1 holds Montmartre (d1) and Marais (d2); d1.allowed_users == [user3]
+# (Carol, company "Acme Corp"). DistrictSchema does NOT declare allowed_users,
+# proving a collection can be filtered without being embedded in the response.
+# ---------------------------------------------------------------------------
+
+_M2M_CONFIG = ListConfig(
+    filterable_fields=[
+        "name",
+        "allowed_users.id",
+        "allowed_users.name",
+        "allowed_users.company.name",
+    ],
+    login_required=False,
+)
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_in(seed, make_client):
+    # The user's case: districts having an allowed_user whose id is in {3}.
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id__in=3")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert [d["name"] for d in data] == ["Montmartre"]
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_eq(seed, make_client):
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id=3")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert [d["name"] for d in data] == ["Montmartre"]
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_no_match(seed, make_client):
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id__in=999")
+        assert r.status_code == 200
+        assert r.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_nested_attr_ilike(seed, make_client):
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.name__ilike=Carol")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert [d["name"] for d in data] == ["Montmartre"]
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_collection_then_m2o(seed, make_client):
+    # allowed_users (m2m) -> company (m2o): any(... has(...)) nesting.
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.company.name__ilike=Acme%")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert [d["name"] for d in data] == ["Montmartre"]
+
+
+@pytest.mark.asyncio
+async def test_m2m_filter_no_row_duplication(seed, make_client):
+    # An EXISTS subquery must not multiply rows even when several allowed_users
+    # would match: id__in covering the match returns Montmartre exactly once.
+    async with await make_client(_M2M_CONFIG) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id__in=1,2,3")
+        assert r.status_code == 200
+        body = r.json()
+        assert [d["name"] for d in body["data"]] == ["Montmartre"]
+        assert body["totalCount"] == 1

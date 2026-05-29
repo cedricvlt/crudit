@@ -372,13 +372,18 @@ def collect_needed_joins(
         rel_parts = field_path.split(".")[:-1]
         nodes = join_info.nodes
         prefix = ""
+        prefixes: list[str] = []
         for rel_name in rel_parts:
             node = nodes.get(rel_name)
             if node is None or node.is_collection:
+                # A collection (or missing) segment means the whole path is
+                # resolved via an EXISTS subquery, not a JOIN — drop any m2o
+                # prefixes accumulated so far so we never emit a stray JOIN.
                 return
             prefix = f"{prefix}.{rel_name}" if prefix else rel_name
-            needed.add(prefix)
+            prefixes.append(prefix)
             nodes = node.children
+        needed.update(prefixes)
 
     for raw_key in filter_params:
         if raw_key in _RESERVED_PARAMS:
@@ -438,6 +443,55 @@ def resolve_nested_column(
     if col is None:
         raise ValueError(f"Field '{col_name}' not found on {current_model.__name__}.")
     return col
+
+
+def resolve_filter_path(
+    field_path: str,
+    model: type[DeclarativeBase],
+    join_info: JoinInfo,
+) -> tuple[Any, list[tuple[Any, bool]]]:
+    """Resolve a dotted filter path to ``(leaf_col, wrappers)``.
+
+    ``wrappers`` is a list of ``(relationship_attr, is_collection)`` tuples,
+    ordered outermost-first, that the caller wraps the leaf comparison in via
+    ``.any()`` (collection) / ``.has()`` (scalar) — applied innermost-first.
+
+    Two resolution modes:
+
+    - **Pure many-to-one chains** (or a plain column): ``wrappers`` is empty and
+      the leaf is resolved with :func:`resolve_nested_column`, preserving the
+      existing JOIN-based behavior, the response-schema requirement, and the
+      error messages exactly.
+    - **Chains traversing a collection** (o2m / m2m): resolved directly from the
+      SQLAlchemy mapper — *independent of the response schema* — so a collection
+      can be filtered without being declared on the schema. Filtering uses an
+      ``EXISTS`` subquery, which neither multiplies rows nor needs a JOIN.
+    """
+    if "." not in field_path:
+        return resolve_nested_column(field_path, model, join_info), []
+
+    *rel_parts, col_name = field_path.split(".")
+    wrappers: list[tuple[Any, bool]] = []
+    current_model: type = model
+    walked = ""
+    for rel_name in rel_parts:
+        walked = f"{walked}.{rel_name}" if walked else rel_name
+        rel = sa_inspect(current_model).relationships.get(rel_name)
+        if rel is None:
+            raise ValueError(
+                f"Relationship '{walked}' not found on {model.__name__}."
+            )
+        wrappers.append((getattr(current_model, rel_name), bool(rel.uselist)))
+        current_model = rel.mapper.class_
+
+    # Pure m2o chain: defer to the JOIN-based resolver (behavior unchanged).
+    if not any(is_collection for _, is_collection in wrappers):
+        return resolve_nested_column(field_path, model, join_info), []
+
+    col = getattr(current_model, col_name, None)
+    if col is None:
+        raise ValueError(f"Field '{col_name}' not found on {current_model.__name__}.")
+    return col, wrappers
 
 
 def _extract_nested_model(annotation: Any) -> tuple[type[BaseModel] | None, bool]:

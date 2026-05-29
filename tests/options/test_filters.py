@@ -112,3 +112,19 @@ async def test_year_filter(seed, make_client):
         assert r.status_code == 200
         labels = {item["label"] for item in r.json()["data"]}
         assert labels == {"Montmartre", "Marais"}
+
+
+@pytest.mark.asyncio
+async def test_filter_by_m2m_collection(seed, make_client):
+    # The shared filter layer makes collection (m2m) filtering work here too:
+    # d1 (Montmartre) allows user3 (id 3).
+    async with await make_client(
+        OptionsConfig(
+            login_required=False,
+            filterable_fields=["allowed_users.id"],
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?allowed_users.id__in=3")
+        assert r.status_code == 200
+        labels = [item["label"] for item in r.json()["data"]]
+        assert labels == ["Montmartre"]

@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 from sqlalchemy.types import TypeDecorator
 
-from crudit.joins import JoinInfo, resolve_nested_column
+from crudit.joins import JoinInfo, resolve_filter_path
 from crudit.types import FilterFn
 
 
@@ -84,13 +84,19 @@ def apply_filters(
             continue
 
         if field_path in computed_fields:
-            col = computed_fields[field_path](model)
+            col, wrappers = computed_fields[field_path](model), []
         else:
-            col = resolve_nested_column(field_path, model, join_info)
+            col, wrappers = resolve_filter_path(field_path, model, join_info)
         if len(raw_values) == 1:
-            query = query.where(_build_expression(col, operator, raw_values[0]))
+            predicate = _build_expression(col, operator, raw_values[0])
         else:
-            query = query.where(or_(*[_build_expression(col, operator, v) for v in raw_values]))
+            predicate = or_(*[_build_expression(col, operator, v) for v in raw_values])
+        # For paths traversing a collection, wrap the leaf comparison in
+        # EXISTS subqueries (`.any()` for collections, `.has()` for scalars),
+        # innermost-first. `wrappers` is empty for plain/m2o columns.
+        for rel_attr, is_collection in reversed(wrappers):
+            predicate = rel_attr.any(predicate) if is_collection else rel_attr.has(predicate)
+        query = query.where(predicate)
 
     return query
 

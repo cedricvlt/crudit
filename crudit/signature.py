@@ -34,7 +34,7 @@ def _make_filter_params(
     Operator-suffixed params (e.g. name__ilike, age__gte) are added for each
     operator that makes sense for the column type.
     """
-    from crudit.joins import resolve_nested_column
+    from crudit.joins import resolve_filter_path
 
     if computed_fields and field in computed_fields:
         try:
@@ -43,7 +43,7 @@ def _make_filter_params(
             python_type = str
     else:
         try:
-            col = resolve_nested_column(field, model, join_info)
+            col, _ = resolve_filter_path(field, model, join_info)
             python_type = _get_python_type(col)
         except Exception:
             python_type = str
