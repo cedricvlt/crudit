@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import inspect
 import re
 from typing import Any, Callable
 
@@ -52,7 +52,7 @@ def get_error_responses(*codes: int) -> dict[int, dict[str, str]]:
 
 async def call_hook(fn: Callable, *args: Any) -> Any:
     """Call a sync or async hook function with *args and return its result."""
-    if asyncio.iscoroutinefunction(fn):
+    if inspect.iscoroutinefunction(fn):
         return await fn(*args)
     return fn(*args)
 
