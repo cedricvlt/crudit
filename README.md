@@ -502,7 +502,7 @@ For any field that needs custom logic, provide a setter callable in `field_sette
 
 ```python
 def set_company(obj, request, current_user):
-    return current_user.company_id
+    return current_user.companies[0].id
 
 async def set_slug(obj, request, current_user):
     return slugify(obj.name)
@@ -974,10 +974,18 @@ list_endpoint(
 
 | Model attribute | Condition |
 |---|---|
-| `company_id` column | user's `company_id` must match the row's `company_id` |
+| `company_id` column | the row's `company_id` must be one of the user's companies |
 | `allowed_users` relationship | user's `id` must appear in the row's `allowed_users` |
 
-When both are present they combine with **OR** — a row is accessible if the company matches *or* the user is explicitly listed.
+Company scoping expects the user to be **multi-company**: the user model exposes a
+`companies` many-to-many relationship, and crudit emits `company_id IN (<the user's
+company ids>)`. A user belonging to no company sees no company-scoped rows.
+
+> **The `companies` collection must be loaded** before the request handler reads it —
+> eager-load it (`lazy="selectin"` on the relationship, or load it in your auth
+> dependency). The handler is async, so a lazy collection would raise `MissingGreenlet`.
+
+When both `company_id` and `allowed_users` are present they combine with **OR** — a row is accessible if a company matches *or* the user is explicitly listed.
 
 The enforcement mechanism differs by endpoint:
 

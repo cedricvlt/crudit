@@ -171,20 +171,20 @@ async def test_custom_child_path_segment(seed, make_client):
 # ---------------------------------------------------------------------------
 
 
-class CompanySchema(BaseModel):
+class CitySchema(BaseModel):
     id: int
     name: str
 
 
-class UserWithCompanySchema(BaseModel):
+class UserWithCitySchema(BaseModel):
     id: int
     name: str
-    company: CompanySchema | None = None
+    city: CitySchema | None = None
 
 
 @pytest_asyncio.fixture
 def nested_client(engine):
-    """Client whose child schema has a nested m2o relationship (company)."""
+    """Client whose child schema has a nested m2o relationship (city)."""
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -196,7 +196,7 @@ def nested_client(engine):
         parent_model=District,
         child_model=User,
         association_table=district_allowed_users,
-        child_schema=UserWithCompanySchema,
+        child_schema=UserWithCitySchema,
         prefix="/districts",
         get_db=get_db,
     )
@@ -205,22 +205,22 @@ def nested_client(engine):
 
 
 async def test_list_serializes_nested_child_field(seed, nested_client):
-    # district 1 has Carol (user3, company 1 "Acme Corp") linked in the seed.
+    # district 1 has Carol (user3, city 1 "Paris") linked in the seed.
     async with nested_client as client:
         r = await client.get("/districts/1/users")
         assert r.status_code == 200
         carol = next(u for u in r.json() if u["id"] == 3)
-        assert carol["company"] == {"id": 1, "name": "Acme Corp"}
+        assert carol["city"] == {"id": 1, "name": "Paris"}
 
 
 async def test_add_serializes_nested_child_field(seed, nested_client):
-    # Adding returns the child list; nested company must be populated, not 500.
+    # Adding returns the child list; nested city must be populated, not 500.
     async with nested_client as client:
         r = await client.post("/districts/2/users", json={"ids": [1, 2]})
         assert r.status_code == 200
         by_id = {u["id"]: u for u in r.json()}
-        assert by_id[1]["company"] == {"id": 1, "name": "Acme Corp"}
-        assert by_id[2]["company"] == {"id": 2, "name": "Other Corp"}
+        assert by_id[1]["city"] == {"id": 1, "name": "Paris"}
+        assert by_id[2]["city"] == {"id": 2, "name": "London"}
 
 
 # ---------------------------------------------------------------------------

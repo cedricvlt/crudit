@@ -423,12 +423,12 @@ class TestCollectionFilterOpenAPI:
         assert "allowed_users.name__like" in params
 
     def test_collection_then_m2o_leaf_type_resolved(self):
-        # allowed_users (m2m) -> company (m2o) -> name (str)
-        op = self._op_for(["allowed_users.company.name"])
+        # allowed_users (m2m) -> city (m2o) -> name (str)
+        op = self._op_for(["allowed_users.city.name"])
         params = _query_params(op)
-        assert "allowed_users.company.name" in params
-        assert "allowed_users.company.name__in" in params
-        s = _non_null_schema(_param_schema(op, "allowed_users.company.name"))
+        assert "allowed_users.city.name" in params
+        assert "allowed_users.city.name__in" in params
+        s = _non_null_schema(_param_schema(op, "allowed_users.city.name"))
         assert s.get("items", {}).get("type") == "string"
 
 

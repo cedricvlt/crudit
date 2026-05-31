@@ -289,7 +289,7 @@ async def test_invalid_relative(seed, make_client):
 # ---------------------------------------------------------------------------
 # Collection (o2m / m2m) relationship filters via EXISTS subqueries.
 # Seed: city 1 holds Montmartre (d1) and Marais (d2); d1.allowed_users == [user3]
-# (Carol, company "Acme Corp"). DistrictSchema does NOT declare allowed_users,
+# (Carol, city "Paris"). DistrictSchema does NOT declare allowed_users,
 # proving a collection can be filtered without being embedded in the response.
 # ---------------------------------------------------------------------------
 
@@ -298,7 +298,7 @@ _M2M_CONFIG = ListConfig(
         "name",
         "allowed_users.id",
         "allowed_users.name",
-        "allowed_users.company.name",
+        "allowed_users.city.name",
     ],
     login_required=False,
 )
@@ -342,9 +342,10 @@ async def test_m2m_filter_nested_attr_ilike(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_m2m_filter_collection_then_m2o(seed, make_client):
-    # allowed_users (m2m) -> company (m2o): any(... has(...)) nesting.
+    # allowed_users (m2m) -> city (m2o): any(... has(...)) nesting.
+    # district 1 (Montmartre) has Carol (user3), whose city is Paris.
     async with await make_client(_M2M_CONFIG) as client:
-        r = await client.get("/cities/1/districts?allowed_users.company.name__ilike=Acme%")
+        r = await client.get("/cities/1/districts?allowed_users.city.name__ilike=Par%")
         assert r.status_code == 200
         data = r.json()["data"]
         assert [d["name"] for d in data] == ["Montmartre"]

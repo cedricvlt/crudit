@@ -26,6 +26,14 @@ district_allowed_users = Table(
 )
 
 
+user_companies = Table(
+    "user_companies",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("company_id", Integer, ForeignKey("companies.id"), primary_key=True),
+)
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -40,9 +48,15 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
+    city_id: Mapped[int | None] = mapped_column(ForeignKey("cities.id"), nullable=True)
 
-    company: Mapped[Company | None] = relationship("Company")
+    # Users are multi-company: company membership is a M2M relationship, eager
+    # loaded so crudit can read it inside the async request handler.
+    companies: Mapped[list[Company]] = relationship(
+        "Company", secondary=user_companies, lazy="selectin"
+    )
+    # A plain many-to-one, used by tests that exercise m2m -> m2o traversal.
+    city: Mapped[City | None] = relationship("City")
 
     _order_fields = ("name",)
 
@@ -174,9 +188,9 @@ async def seed(db_session: AsyncSession):
     company1 = Company(id=1, name="Acme Corp")
     company2 = Company(id=2, name="Other Corp")
 
-    user1 = User(id=1, name="Alice", company_id=1)
-    user2 = User(id=2, name="Bob", company_id=2)
-    user3 = User(id=3, name="Carol", company_id=1)
+    user1 = User(id=1, name="Alice", companies=[company1], city_id=1)
+    user2 = User(id=2, name="Bob", companies=[company2], city_id=2)
+    user3 = User(id=3, name="Carol", companies=[company1], city_id=1)
 
     country1 = Country(id=1, name="France")
     country2 = Country(id=2, name="UK")

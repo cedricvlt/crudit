@@ -209,7 +209,7 @@ async def test_create_auto_set_created_by_id_skipped(engine, seed, cleanup_distr
     """Even with a current_user whose id doesn't reference any User row,
     the pre-flight must NOT 422 because created_by_id is in skip_cols.
     (SQLite FK enforcement is off in tests, so commit also succeeds.)"""
-    fake_user = User(id=9999, name="Ghost", company_id=None)
+    fake_user = User(id=9999, name="Ghost", companies=[])
     app = _make_flat_app(engine, current_user=fake_user)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(

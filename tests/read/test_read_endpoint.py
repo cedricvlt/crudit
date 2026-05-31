@@ -59,9 +59,9 @@ async def test_read_login_not_required_no_user_returns_200(seed, make_read_clien
 @pytest.mark.asyncio
 async def test_read_permission_dep_denied_returns_403(seed, make_read_client):
     from fastapi import HTTPException
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def deny_dep(*_perms):
         async def dep():
@@ -79,9 +79,9 @@ async def test_read_permission_dep_denied_returns_403(seed, make_read_client):
 
 @pytest.mark.asyncio
 async def test_read_permission_dep_allowed_returns_200(seed, make_read_client):
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def allow_dep(*_perms):
         async def dep():
@@ -103,9 +103,9 @@ async def test_read_permission_dep_allowed_returns_200(seed, make_read_client):
 
 @pytest.mark.asyncio
 async def test_read_company_match_returns_200(seed, make_read_client):
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
     async with await make_read_client(ReadConfig(login_required=True), current_user=user) as client:
         r = await client.get("/districts/1")  # district 1 has company_id=1
         assert r.status_code == 200
@@ -113,9 +113,9 @@ async def test_read_company_match_returns_200(seed, make_read_client):
 
 @pytest.mark.asyncio
 async def test_read_company_mismatch_returns_403(seed, make_read_client):
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
-    user = User(id=2, name="Bob", company_id=2)
+    user = User(id=2, name="Bob", companies=[Company(id=2)])
     async with await make_read_client(ReadConfig(login_required=True), current_user=user) as client:
         r = await client.get("/districts/1")  # district 1 has company_id=1
         assert r.status_code == 403
@@ -133,9 +133,9 @@ async def test_read_explicit_user_access_overrides_company(seed, make_read_clien
     District 3 has company_id=2, user 3 has company_id=1 — company mismatch,
     but user 3 is NOT in district 3's allowed_users, so should be 403.
     """
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
-    user3 = User(id=3, name="Carol", company_id=1)
+    user3 = User(id=3, name="Carol", companies=[Company(id=1)])
     async with await make_read_client(ReadConfig(login_required=True), current_user=user3) as client:
         # District 3 is company_id=2, user3 is company_id=1, not in allowed_users → 403
         r = await client.get("/districts/3")

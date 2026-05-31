@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from crudit import CreateConfig, ParentParam
-from tests.conftest import City, DistrictCreateFlatSchema, DistrictSchema, User
+from tests.conftest import City, Company, DistrictCreateFlatSchema, DistrictSchema, User
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ async def test_create_login_not_required_no_user_returns_201(seed, make_create_c
 async def test_create_permission_dep_denied_returns_403(seed, make_create_client):
     from fastapi import HTTPException
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def deny_dep(*_perms):
         async def dep():
@@ -122,7 +122,7 @@ async def test_create_permission_dep_denied_returns_403(seed, make_create_client
 
 @pytest.mark.asyncio
 async def test_create_permission_dep_allowed_returns_201(seed, make_create_client, cleanup_districts):
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def allow_dep(*_perms):
         async def dep():
@@ -159,7 +159,7 @@ async def test_create_sets_created_at(seed, make_create_client, cleanup_district
 
 @pytest.mark.asyncio
 async def test_create_sets_created_by(seed, make_create_client, cleanup_districts):
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
     config = CreateConfig(
         login_required=True,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],
@@ -238,7 +238,7 @@ async def test_field_setter_receives_obj_request_user(seed, make_create_client, 
         received["user"] = user
         return 1
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
     config = CreateConfig(
         login_required=True,
         parent_params=[ParentParam(url_param="city_id", model=City, child_field="city_id")],

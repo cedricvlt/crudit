@@ -30,8 +30,8 @@ async def test_no_login_required(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_company_filter_isolates_rows(seed, make_client):
-    from tests.conftest import User
-    user = User(id=1, name="Alice", company_id=1)
+    from tests.conftest import Company, User
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     async with await make_client(
         ListConfig(
@@ -54,8 +54,8 @@ async def test_company_filter_isolates_rows(seed, make_client):
 async def test_allowed_users_grants_access(seed, make_client):
     """user3 (company_id=1) is in allowed_users for district 1 (company_id=1).
     Since they share a company, they still see company-matching rows."""
-    from tests.conftest import User
-    user3 = User(id=3, name="Carol", company_id=1)
+    from tests.conftest import Company, User
+    user3 = User(id=3, name="Carol", companies=[Company(id=1)])
 
     async with await make_client(
         ListConfig(
@@ -72,14 +72,14 @@ async def test_allowed_users_grants_access(seed, make_client):
 @pytest.mark.asyncio
 async def test_permission_dep_forbidden(seed, make_client):
     from fastapi import HTTPException
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
     def deny_dep(*_perms):
         async def dep():
             raise HTTPException(status_code=403, detail="Insufficient permissions.")
         return dep
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     async with await make_client(
         ListConfig(
@@ -95,14 +95,14 @@ async def test_permission_dep_forbidden(seed, make_client):
 
 @pytest.mark.asyncio
 async def test_permission_dep_allowed(seed, make_client):
-    from tests.conftest import User
+    from tests.conftest import Company, User
 
     def allow_dep(*_perms):
         async def dep():
             pass
         return dep
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     async with await make_client(
         ListConfig(

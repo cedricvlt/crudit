@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from crudit import UpdateConfig, update_endpoint
 from tests.conftest import (
+    Company,
     District,
     DistrictSchema,
     Tag,
@@ -173,7 +174,7 @@ async def test_update_null_nullable_fk_succeeds(engine, seed):
 async def test_update_updated_by_id_skipped(engine, seed):
     # company_id=1 matches District(id=1) for the row-level permission check;
     # id=9999 doesn't reference any real User row, which is what we're testing.
-    fake_user = User(id=9999, name="Ghost", company_id=1)
+    fake_user = User(id=9999, name="Ghost", companies=[Company(id=1)])
     app = _make_district_app(engine, current_user=fake_user)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.patch("/districts/1", json={"name": "Touch"})

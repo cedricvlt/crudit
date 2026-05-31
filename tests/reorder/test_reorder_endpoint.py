@@ -6,7 +6,7 @@ from sqlalchemy import Column, Integer
 from sqlalchemy.orm import DeclarativeBase
 
 from crudit import ReorderConfig, reorder_endpoint
-from tests.conftest import User
+from tests.conftest import Company, User
 from tests.reorder.conftest import get_sort_order
 
 
@@ -105,7 +105,7 @@ async def test_reorder_login_not_required_no_user_returns_204(seed, make_reorder
 async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_client):
     from fastapi import HTTPException
 
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def deny_dep(*_perms):
         async def dep():
@@ -123,7 +123,7 @@ async def test_reorder_permission_dep_denied_returns_403(seed, make_reorder_clie
 
 @pytest.mark.asyncio
 async def test_reorder_permission_dep_allowed_returns_204(seed, make_reorder_client):
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
 
     def allow_dep(*_perms):
         async def dep():
@@ -146,7 +146,7 @@ async def test_reorder_permission_dep_allowed_returns_204(seed, make_reorder_cli
 @pytest.mark.asyncio
 async def test_reorder_wrong_company_returns_403(seed, make_reorder_client):
     # district 3 has company_id=2; user has company_id=1
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
     config = ReorderConfig(login_required=True)
     async with await make_reorder_client(config, current_user=user) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 3]})
@@ -156,7 +156,7 @@ async def test_reorder_wrong_company_returns_403(seed, make_reorder_client):
 @pytest.mark.asyncio
 async def test_reorder_correct_company_returns_204(seed, make_reorder_client, engine):
     # districts 1 and 2 both have company_id=1; user has company_id=1
-    user = User(id=1, name="Alice", company_id=1)
+    user = User(id=1, name="Alice", companies=[Company(id=1)])
     config = ReorderConfig(login_required=True)
     async with await make_reorder_client(config, current_user=user) as client:
         r = await client.post("/districts/reorder", json={"ids": [2, 1]})
@@ -172,7 +172,7 @@ async def test_reorder_correct_company_returns_204(seed, make_reorder_client, en
 @pytest.mark.asyncio
 async def test_reorder_via_allowed_users_returns_204(seed, make_reorder_client, engine):
     # district 1 has company_id=1 and user3 (company_id=1) is in allowed_users
-    user3 = User(id=3, name="Carol", company_id=1)
+    user3 = User(id=3, name="Carol", companies=[Company(id=1)])
     config = ReorderConfig(login_required=True)
     async with await make_reorder_client(config, current_user=user3) as client:
         r = await client.post("/districts/reorder", json={"ids": [2, 1]})
@@ -182,7 +182,7 @@ async def test_reorder_via_allowed_users_returns_204(seed, make_reorder_client, 
 @pytest.mark.asyncio
 async def test_reorder_not_in_allowed_users_wrong_company_returns_403(seed, make_reorder_client):
     # user2 (company_id=2) is NOT in district 1's allowed_users and company doesn't match
-    user2 = User(id=2, name="Bob", company_id=2)
+    user2 = User(id=2, name="Bob", companies=[Company(id=2)])
     config = ReorderConfig(login_required=True)
     async with await make_reorder_client(config, current_user=user2) as client:
         r = await client.post("/districts/reorder", json={"ids": [1, 2]})

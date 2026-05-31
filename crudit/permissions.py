@@ -58,9 +58,9 @@ def _build_object_level_checks(
 ) -> list[Callable[[Any], bool]]:
     checks: list[Callable[[Any], bool]] = []
 
-    if hasattr(model, "company_id") and hasattr(current_user, "company_id"):
-        company_id = current_user.company_id
-        checks.append(lambda obj, _t=company_id: obj.company_id == _t)
+    if hasattr(model, "company_id") and hasattr(current_user, "companies"):
+        company_ids = {c.id for c in current_user.companies}
+        checks.append(lambda obj, _ids=company_ids: obj.company_id in _ids)
 
     if has_allowed_users_relationship(model):
         user_id = getattr(current_user, "id", None)
@@ -78,8 +78,9 @@ def _build_row_level_conditions(
 ) -> list[Any]:
     conditions = []
 
-    if hasattr(model, "company_id") and hasattr(current_user, "company_id"):
-        conditions.append(model.company_id == current_user.company_id)
+    company_condition = _company_scope_condition(model, current_user)
+    if company_condition is not None:
+        conditions.append(company_condition)
 
     if has_allowed_users_relationship(model):
         user_id = getattr(current_user, "id", None)
@@ -91,6 +92,30 @@ def _build_row_level_conditions(
                 )
 
     return conditions
+
+
+def _company_scope_condition(
+    model: type[DeclarativeBase],
+    current_user: Any,
+) -> Any | None:
+    """SQL condition scoping ``model`` rows to the current user's companies.
+
+    Returns ``None`` when the model has no ``company_id`` (nothing to scope) or
+    when the user has no ``companies`` relationship.
+
+    Users are multi-company: ``current_user.companies`` is a many-to-many
+    relationship. This emits ``model.company_id IN (<user's company ids>)``.
+
+    The user's ``companies`` collection must be **loaded** before the request
+    handler reads it — eager-load it (``lazy="selectin"``) or load it in the auth
+    dependency. The handler is async, so a lazy collection would raise
+    ``MissingGreenlet`` here. An empty collection yields an ``IN ()`` that matches
+    no rows, which is the correct result for a user belonging to no company.
+    """
+    if not hasattr(model, "company_id") or not hasattr(current_user, "companies"):
+        return None
+
+    return model.company_id.in_([c.id for c in current_user.companies])
 
 
 def has_allowed_users_relationship(model: type[DeclarativeBase]) -> bool:
