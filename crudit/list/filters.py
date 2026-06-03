@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql import Select
 from sqlalchemy.types import TypeDecorator
 
-from crudit.joins import JoinInfo, is_id_column, resolve_filter_path
+from crudit.joins import JoinInfo, is_foreign_key_column, resolve_filter_path
 from crudit.types import FilterFn
 
 
@@ -89,10 +89,10 @@ def apply_filters(
             col, wrappers = computed_fields[field_path](model), []
         else:
             col, wrappers = resolve_filter_path(field_path, model, join_info)
-        if operator in _RANGE_OPERATORS and is_id_column(col):
+        if operator in _RANGE_OPERATORS and is_foreign_key_column(col):
             raise HTTPException(
                 status_code=400,
-                detail=f"Operator '{operator}' is not supported on id field '{field_path}'.",
+                detail=f"Operator '{operator}' is not supported on foreign-key field '{field_path}'.",
             )
         if len(raw_values) == 1:
             predicate = _build_expression(col, operator, raw_values[0])

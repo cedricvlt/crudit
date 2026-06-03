@@ -290,9 +290,9 @@ class TestListOpenAPI:
         assert _non_null_schema(_param_schema(op, "sort_order__gte")).get("type") == "integer"
         assert _non_null_schema(_param_schema(op, "sort_order__lt")).get("type") == "integer"
 
-    def test_id_pk_column_has_no_range_operator_params(self):
-        # Range ops (lt/lte/gt/gte) are meaningless on a primary-key column and
-        # must not be emitted; equality-style ops remain.
+    def test_id_pk_column_keeps_range_operator_params(self):
+        # Range ops (lt/lte/gt/gte) are meaningful on a plain primary key and
+        # must be emitted alongside the equality-style ops.
         def register(router):
             list_endpoint(router, "/items", _Item, _ItemSchema, ListConfig(filterable_fields=["id"]), get_db=_get_db)
 
@@ -303,10 +303,10 @@ class TestListOpenAPI:
         assert "id__ne" in params
         assert "id__in" in params
         assert "id__isnull" in params
-        assert "id__gte" not in params
-        assert "id__lte" not in params
-        assert "id__gt" not in params
-        assert "id__lt" not in params
+        assert "id__gte" in params
+        assert "id__lte" in params
+        assert "id__gt" in params
+        assert "id__lt" in params
 
     def test_isnull_param_has_boolean_type(self):
         def register(router):
@@ -408,13 +408,22 @@ class TestCollectionFilterOpenAPI:
         assert "allowed_users.id__in" in _query_params(op)
         assert _non_null_schema(_param_schema(op, "allowed_users.id__in")).get("type") == "string"
 
-    def test_collection_id_leaf_has_no_range_operators(self):
-        # The collection leaf allowed_users.id is a primary key — no range ops.
+    def test_collection_pk_leaf_keeps_range_operators(self):
+        # The collection leaf allowed_users.id is a primary key (not a foreign
+        # key), so range ops remain available.
         op = self._op_for(["allowed_users.id"])
         params = _query_params(op)
         assert "allowed_users.id__in" in params
         for suffix in ("gte", "lte", "gt", "lt"):
-            assert f"allowed_users.id__{suffix}" not in params
+            assert f"allowed_users.id__{suffix}" in params
+
+    def test_nested_fk_leaf_has_no_range_operators(self):
+        # A foreign-key leaf (created_by.city_id) drops range ops.
+        op = self._op_for(["created_by.city_id"])
+        params = _query_params(op)
+        assert "created_by.city_id__in" in params
+        for suffix in ("gte", "lte", "gt", "lt"):
+            assert f"created_by.city_id__{suffix}" not in params
 
     def test_collection_str_leaf_gets_string_operators(self):
         op = self._op_for(["allowed_users.name"])

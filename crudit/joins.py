@@ -494,19 +494,21 @@ def resolve_filter_path(
     return col, wrappers
 
 
-def is_id_column(col: Any) -> bool:
-    """Return True if ``col`` maps to a primary-key or foreign-key column.
+def is_foreign_key_column(col: Any) -> bool:
+    """Return True if ``col`` maps to a foreign-key column.
 
-    Range operators (``lt``/``lte``/``gt``/``gte``) are meaningless on identifier
-    columns, so they are neither advertised in the OpenAPI schema nor accepted at
-    runtime for such fields. Anything that is not a mapped column (e.g. a computed
-    scalar subquery) is treated as a non-id column.
+    Range operators (``lt``/``lte``/``gt``/``gte``) are meaningless on a foreign
+    key (e.g. ``company_id``), so they are neither advertised in the OpenAPI
+    schema nor accepted at runtime for such fields. A plain primary key like
+    ``id`` is *not* affected — ordering comparisons on it remain available.
+    Anything that is not a mapped column (e.g. a computed scalar subquery) is
+    treated as a non-foreign-key column.
     """
     try:
         column = col.property.columns[0]
     except Exception:  # noqa: BLE001
         return False
-    return bool(column.primary_key) or bool(column.foreign_keys)
+    return bool(column.foreign_keys)
 
 
 def _extract_nested_model(annotation: Any) -> tuple[type[BaseModel] | None, bool]:

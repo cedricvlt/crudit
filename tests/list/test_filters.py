@@ -369,12 +369,13 @@ async def test_m2m_filter_no_row_duplication(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_range_operator_rejected_on_pk_id(seed, make_client):
+async def test_range_operator_allowed_on_pk_id(seed, make_client):
+    # Range ops are meaningful on a plain primary key, so they stay available.
     async with await make_client(
         ListConfig(filterable_fields=["id"], login_required=False)
     ) as client:
         r = await client.get("/cities/1/districts?id__gte=1")
-        assert r.status_code == 400
+        assert r.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -388,15 +389,16 @@ async def test_range_operator_rejected_on_fk_id(seed, make_client):
 
 
 @pytest.mark.asyncio
-async def test_range_operator_rejected_on_m2m_id(seed, make_client):
+async def test_range_operator_allowed_on_m2m_pk_id(seed, make_client):
+    # allowed_users.id is User's primary key (not a foreign key), so range ops apply.
     async with await make_client(_M2M_CONFIG) as client:
         r = await client.get("/cities/1/districts?allowed_users.id__gt=1")
-        assert r.status_code == 400
+        assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_eq_and_in_still_allowed_on_pk_id(seed, make_client):
-    # Only range ops are blocked on id columns; equality/in remain valid.
+    # Equality/in operators remain valid on a primary key.
     async with await make_client(
         ListConfig(filterable_fields=["id"], login_required=False)
     ) as client:

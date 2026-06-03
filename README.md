@@ -873,7 +873,7 @@ All list endpoints return the same paginated envelope:
 
 Nested fields use dot notation: `?city.name__ilike=Par%`. The relationship must be in the Pydantic schema (auto-joined via `joinedload`).
 
-The range operators (`__lt`, `__lte`, `__gt`, `__gte`) do **not** apply to identifier columns — a primary key or foreign key such as `id` or `company_id` (including a collection leaf like `inhabitants.id`). They are omitted from the OpenAPI schema and rejected with a `400` at runtime, since an ordering comparison on an opaque id is meaningless. Equality-style operators (`__eq`, `__ne`, `__in`, `__isnull`) remain available on id columns.
+The range operators (`__lt`, `__lte`, `__gt`, `__gte`) do **not** apply to foreign-key columns such as `company_id` (including a collection leaf like `inhabitants.company_id`). They are omitted from the OpenAPI schema and rejected with a `400` at runtime, since an ordering comparison on an opaque foreign key is meaningless. Equality-style operators (`__eq`, `__ne`, `__in`, `__isnull`) remain available on foreign keys. A plain primary key like `id` is unaffected — range operators stay available on it.
 
 Columns backed by a string-based SQLAlchemy `TypeDecorator` — such as sqlalchemy_utils' `PhoneNumberType` — are compared as plain text. Such types parse every bound value (e.g. into a `PhoneNumber`), which would otherwise make a filter or search string like `%555%` raise a parse error; crudit casts the column to `String` so filtering and search operate on the stored text instead.
 
@@ -941,7 +941,7 @@ GET /districts?inhabitants.name__ilike=%al%
 GET /districts?inhabitants.company.name=Acme
 ```
 
-Unlike m2o paths, a filtered collection relationship does **not** need to be declared on the response schema — it is resolved straight from the SQLAlchemy mapper, so you can filter by `inhabitants` without embedding the inhabitants list in every response. Standard operators apply to the leaf column (`__in`, `__ilike`, …), subject to the same per-type rules as ordinary fields — e.g. range operators are still rejected on an id leaf like `inhabitants.id`. Sorting and search through a collection remain unsupported.
+Unlike m2o paths, a filtered collection relationship does **not** need to be declared on the response schema — it is resolved straight from the SQLAlchemy mapper, so you can filter by `inhabitants` without embedding the inhabitants list in every response. Standard operators apply to the leaf column (`__in`, `__ilike`, …), subject to the same per-type rules as ordinary fields — e.g. range operators are still rejected on a foreign-key leaf like `inhabitants.company_id`. Sorting and search through a collection remain unsupported.
 
 ### `@property` fields
 
