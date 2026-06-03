@@ -62,7 +62,8 @@ def _default_sort(model: type[DeclarativeBase]) -> list[Any]:
     order_fields: tuple[str, ...] = getattr(model, "_order_fields", ())
     clauses = []
     for field_name in order_fields:
-        col = getattr(model, field_name, None)
+        descending = field_name.startswith("-")
+        col = getattr(model, field_name.lstrip("-"), None)
         if col is not None:
-            clauses.append(nulls_last(col.asc()))
+            clauses.append(nulls_last(col.desc() if descending else col.asc()))
     return clauses
