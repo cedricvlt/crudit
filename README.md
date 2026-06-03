@@ -919,11 +919,11 @@ crudit inspects the Pydantic `schema` at registration time. Any field annotated 
 
 Detection **recurses into nested schemas**, so a chain like `District → City → Country` is loaded with a single chained `joinedload(District.city).joinedload(City.country)` — no manual eager-loading config needed.
 
-Nested fields (e.g. `city.name`) in `filterable_fields`, `sortable_fields` or `search_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship. Multi-level paths like `city.country.name` are supported too — every prefix on the chain is JOINed in order and `contains_eager` is chained accordingly. For `sortable_fields` and `search_fields`, every intermediate segment must be a m2o relationship (joining through an o2m would multiply rows); a path that crosses a `list[…]` field is rejected with a `ValueError`.
+Nested fields (e.g. `city.name`) in `filterable_fields`, `sortable_fields` or `search_fields` trigger an explicit `JOIN` on the related table and switch to `contains_eager` for that relationship. Multi-level paths like `city.country.name` are supported too — every prefix on the chain is JOINed in order and `contains_eager` is chained accordingly. For `sortable_fields`, every intermediate segment must be a m2o relationship (joining through an o2m would multiply rows); a sort path that crosses a `list[…]` field is rejected with a `ValueError`. `filterable_fields` and `search_fields` additionally accept paths through a collection — see [Filtering and searching through collections](#filtering-and-searching-through-collections-o2m--m2m).
 
-### Filtering through collections (o2m / m2m)
+### Filtering and searching through collections (o2m / m2m)
 
-`filterable_fields` additionally accepts paths that traverse a **collection** relationship — one-to-many or many-to-many. Instead of a `JOIN` (which would multiply rows and break pagination counts), crudit builds an `EXISTS` subquery via SQLAlchemy's `.any()` / `.has()`, so the match means *"the row has at least one related record matching the criterion"*:
+`filterable_fields` and `search_fields` additionally accept paths that traverse a **collection** relationship — one-to-many or many-to-many. Instead of a `JOIN` (which would multiply rows and break pagination counts), crudit builds an `EXISTS` subquery via SQLAlchemy's `.any()` / `.has()`, so the match means *"the row has at least one related record matching the criterion"*:
 
 ```python
 ListConfig(
@@ -932,6 +932,10 @@ ListConfig(
         "inhabitants.name",
         "inhabitants.company.name",  # collection → m2o nesting also works
     ],
+    search_fields=[
+        "name",
+        "inhabitants.name",          # ?q= ILIKE matches via the collection too
+    ],
 )
 ```
 
@@ -939,9 +943,10 @@ ListConfig(
 GET /districts?inhabitants.id__in=1,2,3      # districts having any inhabitant 1, 2, or 3
 GET /districts?inhabitants.name__ilike=%al%
 GET /districts?inhabitants.company.name=Acme
+GET /districts?q=alice                        # districts with an inhabitant named like "alice"
 ```
 
-Unlike m2o paths, a filtered collection relationship does **not** need to be declared on the response schema — it is resolved straight from the SQLAlchemy mapper, so you can filter by `inhabitants` without embedding the inhabitants list in every response. Standard operators apply to the leaf column (`__in`, `__ilike`, …), subject to the same per-type rules as ordinary fields — e.g. range operators are still rejected on a foreign-key leaf like `inhabitants.company_id`. Sorting and search through a collection remain unsupported.
+Unlike m2o paths, a filtered or searched collection relationship does **not** need to be declared on the response schema — it is resolved straight from the SQLAlchemy mapper, so you can match by `inhabitants` without embedding the inhabitants list in every response. For filters, standard operators apply to the leaf column (`__in`, `__ilike`, …), subject to the same per-type rules as ordinary fields — e.g. range operators are still rejected on a foreign-key leaf like `inhabitants.company_id`. For search, every `search_fields` entry contributes one case-insensitive `ILIKE` clause and all entries are OR-ed together, so a `?q=` hit on *any* field — plain, m2o, or through a collection — matches the row. Sorting through a collection remains unsupported.
 
 ### `@property` fields
 

@@ -34,6 +34,22 @@ async def test_search_no_match(seed, make_client):
 
 
 @pytest.mark.asyncio
+async def test_search_m2m_collection(seed, make_client):
+    # Search across a collection (m2m) relationship works through the options
+    # endpoint too: d1 (Montmartre) has allowed_user Carol.
+    async with await make_client(
+        OptionsConfig(
+            login_required=False,
+            search_fields=["allowed_users.name"],
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?q=Carol")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert [d["label"] for d in data] == ["Montmartre"]
+
+
+@pytest.mark.asyncio
 async def test_custom_search_fn(seed, make_client):
     def my_search(query, q, user):
         from tests.conftest import District
