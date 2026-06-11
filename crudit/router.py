@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import DeclarativeBase
 
 from crudit.create.config import CreateConfig
-from crudit.create.endpoint import create_endpoint
+from crudit.create.endpoint import _strip_path_filter_fields, create_endpoint
 from crudit.delete.config import DeleteConfig
 from crudit.delete.endpoint import delete_endpoint
 from crudit.exceptions import CruditConfigError
@@ -18,14 +18,35 @@ from crudit.options.config import OptionsConfig
 from crudit.options.endpoint import options_endpoint
 from crudit.read.config import ReadConfig
 from crudit.read.endpoint import read_endpoint
+from crudit.registry import CrudDeclaration, register_crud
 from crudit.reorder.config import ReorderConfig
 from crudit.reorder.endpoint import reorder_endpoint
 from crudit.types import PermissionDepFn
 from crudit.update.config import UpdateConfig
 from crudit.update.endpoint import update_endpoint
+from crudit.utils import model_snake_name
 
 _CRUD_ENDPOINTS = ["list", "read", "create", "update", "delete"]
 _EXTRA_ENDPOINTS = ["options", "reorder"]
+_MCP_EXCLUDABLE = set(_CRUD_ENDPOINTS) | {"*"}
+
+
+def _default_entity_type(model: type[DeclarativeBase]) -> str:
+    """Derive ``{domain}.{model}`` from the model's module path, e.g.
+    ``src.core.properties.models`` + ``Property`` → ``core.property``.
+    Falls back to the bare snake model name for shallow module paths."""
+    parts = model.__module__.split(".")
+    name = model_snake_name(model)
+    if len(parts) >= 3:
+        return f"{parts[1]}.{name}"
+    return name
+
+
+def _default_description(model: type[DeclarativeBase]) -> str:
+    doc = (model.__doc__ or "").strip()
+    if doc:
+        return doc.splitlines()[0].strip()
+    return f"{model.__name__} records."
 
 
 @dataclass
@@ -78,6 +99,11 @@ def crud_router(
     delete: DeleteConfig | None = None,
     options: OptionsConfig | None = None,
     reorder: ReorderConfig | None = None,
+    mcp_expose: bool = True,
+    mcp_entity_type: str | None = None,
+    mcp_description: str | None = None,
+    mcp_read_schema: type[BaseModel] | None = None,
+    mcp_exclude: list[str] | None = None,
 ) -> APIRouter:
     """
     Build and return an APIRouter with a configurable set of CRUD endpoints.
@@ -100,6 +126,14 @@ def crud_router(
       update  → update_schema (input) + read_schema (output)
       options → option_schema (label/serialisation + joins); {id, label} from name when omitted
       reorder → no schema
+
+    MCP exposure: every call is also recorded in :mod:`crudit.registry` so
+    MCP-style consumers can drive the same entity through the service layer.
+      mcp_expose      → set False to keep the entity out of the registry
+      mcp_entity_type → override the derived ``{domain}.{model}`` identifier
+      mcp_description → override the model-docstring description
+      mcp_read_schema → lean read schema for MCP consumers (default: read_schema)
+      mcp_exclude     → verbs to hide from MCP consumers ("create", ... or "*")
     """
     active_crud = set(crud_endpoints if crud_endpoints is not None else _CRUD_ENDPOINTS)
     active_extra = set(extra_endpoints or [])
@@ -136,7 +170,17 @@ def crud_router(
     _endpoint_kwargs = dict(login_dep=login_dep, permission_dep=permission_dep, get_db=get_db)
     _path_filter_kwargs = dict(path_filters=path_filters) if path_filters else {}
 
+    _mcp_exclude = frozenset(mcp_exclude or [])
+    unknown_exclude = _mcp_exclude - _MCP_EXCLUDABLE
+    if unknown_exclude:
+        raise CruditConfigError(
+            f"Unknown mcp_exclude name(s): {sorted(unknown_exclude)}. "
+            f"Valid: {sorted(_MCP_EXCLUDABLE)}"
+        )
+
     router = APIRouter()
+
+    list_cfg = read_cfg = create_cfg = update_cfg = delete_cfg = None
 
     if "list" in active:
         list_cfg = list or _from_shared(ListConfig, shared, **_shared_kwargs)
@@ -166,5 +210,33 @@ def crud_router(
     if "delete" in active:
         delete_cfg = delete or _from_shared(DeleteConfig, shared, **_shared_kwargs)
         delete_endpoint(router, "/{id}", model, delete_cfg, **_endpoint_kwargs)
+
+    if mcp_expose:
+        _filters = path_filters or {}
+        register_crud(
+            CrudDeclaration(
+                entity_type=mcp_entity_type or _default_entity_type(model),
+                description=mcp_description or _default_description(model),
+                model=model,
+                list_item_schema=list_item_schema if "list" in active else None,
+                read_schema=read_schema,
+                create_schema=create_schema if "create" in active else None,
+                body_create_schema=(
+                    _strip_path_filter_fields(create_schema, _filters)
+                    if "create" in active
+                    else None
+                ),
+                update_schema=update_schema if "update" in active else None,
+                list_config=list_cfg,
+                read_config=read_cfg,
+                create_config=create_cfg,
+                update_config=update_cfg,
+                delete_config=delete_cfg,
+                path_filters=dict(_filters),
+                login_dep=login_dep,
+                mcp_read_schema=mcp_read_schema,
+                mcp_exclude=_mcp_exclude,
+            )
+        )
 
     return router

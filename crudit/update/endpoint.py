@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import inspect as sa_inspect, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase, selectinload
+from sqlalchemy.orm import DeclarativeBase
 
-from crudit.foreign_keys import (
-    check_foreign_keys,
-    detect_foreign_keys,
-    integrity_error_to_http as fk_integrity_error_to_http,
-)
+from crudit.context import CruditContext
+from crudit.exceptions import CruditNotFound
+from crudit.foreign_keys import detect_foreign_keys
 from crudit.joins import resolve_joins
-from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
 from crudit.read.endpoint import detect_pk_field
 from crudit.signature import patch_param_annotation
 from crudit.types import PermissionDepFn
-from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
+from crudit.unique_constraints import detect_unique_constraints
 from crudit.update.config import UpdateConfig
-from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
+from crudit.update.service import update_service
+from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
 
 def update_endpoint(
@@ -43,29 +39,15 @@ def update_endpoint(
     Register a PATCH endpoint that partially updates an existing object and returns
     it serialised as `read_schema` with status 200.
 
-    Only fields present in the request body are applied (exclude_unset semantics).
-    Join resolution for `read_schema` happens once at registration time.
+    Thin wrapper around `update_service`. Only fields present in the request body
+    are applied (exclude_unset semantics). Join resolution for `read_schema`
+    happens once at registration time.
     """
     join_info = resolve_joins(model, read_schema)
     pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
-    load_allowed_users = (
-        has_allowed_users_relationship(model)
-        and "allowed_users" not in join_info.nodes
-    )
     unique_specs = detect_unique_constraints(model)
     fk_specs = detect_foreign_keys(model)
-
-    _model = model
-    _update_schema = update_schema
-    _read_schema = read_schema
-    _config = config
-    _join_info = join_info
-    _pk_field = pk_field
-    _unique_specs = unique_specs
-    _fk_specs = fk_specs
-    # updated_by_id is auto-filled from current_user.id — trusted, skip.
-    _fk_skip_cols: frozenset[str] = frozenset({"updated_by_id"})
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -73,134 +55,48 @@ def update_endpoint(
     async def _handler(
         request: Request,
         id: Any,  # annotation patched below to _pk_python_type
-        body: BaseModel,  # annotation patched below to _update_schema
+        body: BaseModel,  # annotation patched below to update_schema
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
     ) -> Any:
-        # 1. Login check
-        check_route_permissions(current_user, _config.login_required)
-
-        # 2. Fetch existing object
-        pk_col = getattr(_model, _pk_field)
-        query = select(_model).where(pk_col == id)
-
-        options = _join_info.eager_load_options(_model, set())
-        if load_allowed_users:
-            options.append(selectinload(getattr(_model, "allowed_users")))
-        if options:
-            query = query.options(*options)
-
-        result = await db.execute(query)
-        obj = result.scalars().unique().one_or_none()
-
-        if obj is None:
+        ctx = CruditContext(
+            user=current_user,
+            path_params=dict(request.path_params),
+            query_params=dict(request.query_params),
+            request=request,
+        )
+        try:
+            return await update_service(
+                db,
+                ctx,
+                model=model,
+                body=body,
+                read_schema=read_schema,
+                config=config,
+                id=id,
+                join_info=join_info,
+                pk_field=pk_field,
+                unique_specs=unique_specs,
+                fk_specs=fk_specs,
+            )
+        except CruditNotFound:
             raise HTTPException(status_code=404, detail="Not found.")
 
-        # 3. Object-level permission check
-        check_object_permissions(
-            obj,
-            _model,
-            current_user,
-            _config.login_required,
-        )
-
-        # 4. Build patch dict (only fields the client sent)
-        patch_data: dict[str, Any] = body.model_dump(exclude_unset=True)
-
-        # 5. Auto-fill updated_at when the column has no server_default
-        mapper = sa_inspect(_model)
-        if "updated_at" in mapper.columns:
-            col = mapper.columns["updated_at"]
-            if getattr(col, "server_default", None) is None:
-                patch_data["updated_at"] = datetime.now(timezone.utc)
-
-        # 6. Auto-fill updated_by from current_user.id
-        if "updated_by_id" in mapper.columns and current_user is not None:
-            user_id = getattr(current_user, "id", None)
-            if user_id is not None:
-                patch_data["updated_by_id"] = user_id
-
-        # 7. Field setters (can be async)
-        for field_name, setter in _config.field_setters.items():
-            patch_data[field_name] = await call_hook(setter, obj, request, current_user)
-
-        # 8. before_update hook — receives the existing obj and the full patch dict
-        if _config.before_update is not None:
-            patch_data = await call_hook(_config.before_update, obj, patch_data, request, current_user)
-
-        # 9. Pre-flight foreign-key check on client-provided patch fields.
-        # patch_data is exclude_unset, so a PATCH that touches no FK column
-        # results in zero FK queries. Runs before the unique check so an
-        # invalid FK is reported instead of a downstream uniqueness error.
-        if _fk_specs:
-            await check_foreign_keys(
-                db, _fk_specs, patch_data, skip_cols=_fk_skip_cols,
-            )
-
-        # 10. Pre-flight unique constraint check using the post-patch values.
-        # We check before mutating `obj` so the SELECT's implicit autoflush
-        # doesn't try to push the dirty row into the DB and raise IntegrityError
-        # itself.
-        if _unique_specs:
-            values = {c.key: getattr(obj, c.key) for c in mapper.columns}
-            values.update(patch_data)
-            await check_unique_constraints(
-                db, _model, _unique_specs, values,
-                exclude_pk=(_pk_field, id),
-            )
-
-        # 11. Apply patch to ORM object
-        for attr, value in patch_data.items():
-            setattr(obj, attr, value)
-
-        # 12. Persist
-        db.add(obj)
-        try:
-            await db.commit()
-        except IntegrityError as err:
-            await db.rollback()
-            raise (
-                integrity_error_to_http(err, _unique_specs)
-                or fk_integrity_error_to_http(err, _fk_specs)
-                or HTTPException(
-                    status_code=422,
-                    detail={"code": "VALIDATION_ERROR", "message": "Validation failed"},
-                )
-            )
-
-        # 13. Reload with eager-loaded relationships from read_schema.
-        # `populate_existing` forces relationship attrs to be refreshed on
-        # the identity-mapped instance — otherwise setting only `*_by_id`
-        # leaves the matching `*_by` relationship stale (or None) in the
-        # response when the session uses expire_on_commit=False.
-        reload_q = select(_model).where(pk_col == id).execution_options(populate_existing=True)
-        reload_options = _join_info.eager_load_options(_model, set())
-        if reload_options:
-            reload_q = reload_q.options(*reload_options)
-        result = await db.execute(reload_q)
-        obj = result.scalars().unique().one()
-
-        # 14. after_update hook
-        if _config.after_update is not None:
-            obj = await call_hook(_config.after_update, obj, request, current_user)
-
-        return _read_schema.model_validate(obj, from_attributes=True)
-
     patch_param_annotation(_handler, "id", _pk_python_type)
-    patch_param_annotation(_handler, "body", _update_schema)
+    patch_param_annotation(_handler, "body", update_schema)
 
     model_name = model.__name__
-    deps = list(_config.dependencies)
+    deps = list(config.dependencies)
     if permission_dep is not None:
-        deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
-    op_id = operation_id or _config.operation_id or f"update_{model_snake_name(model)}"
+        deps.append(Depends(bind_perms(permission_dep, config.permissions)))
+    op_id = operation_id or config.operation_id or f"update_{model_snake_name(model)}"
     router.add_api_route(
         path,
         _handler,
         methods=["PATCH"],
-        response_model=_read_schema,
+        response_model=read_schema,
         status_code=200,
-        tags=_config.tags or None,
+        tags=config.tags or None,
         summary=summary or f"Update an existing {model_name} row in the database.",
         operation_id=op_id,
         dependencies=deps,

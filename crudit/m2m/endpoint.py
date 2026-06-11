@@ -6,15 +6,22 @@ from typing import Any, Callable
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.params import Depends as DependsType
 from pydantic import BaseModel
-from sqlalchemy import Column, Table, delete, select
+from sqlalchemy import Column, Table
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from crudit.context import CruditContext
+from crudit.exceptions import CruditNotFound, CruditValidationError
 from crudit.joins import resolve_joins
 from crudit.m2m.config import M2MConfig
+from crudit.m2m.service import (
+    M2MSpec,
+    m2m_add_service,
+    m2m_list_service,
+    m2m_remove_service,
+)
 from crudit.types import PermissionDepFn
 from crudit.utils import (
     bind_perms,
-    call_hook,
     get_error_responses,
     model_snake_name,
     user_dep_or_none,
@@ -59,6 +66,8 @@ def m2m_router(
     config: M2MConfig | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
+    mcp_expose: bool = True,
+    mcp_relation: str | None = None,
 ) -> APIRouter:
     """Build an APIRouter with list / add / remove endpoints for a M2M relationship.
 
@@ -72,6 +81,10 @@ def m2m_router(
         config: Optional M2MConfig for tags, dependencies, auth, etc.
         login_dep: FastAPI dependency that resolves the current user.
         permission_dep: Permission dependency factory (same form as in crud_router).
+        mcp_expose: when True (default), record the relation in the crudit
+            declaration registry so MCP-style consumers can drive it.
+        mcp_relation: relation name used by those consumers; defaults to the
+            child path segment (e.g. ``"tags"``).
     """
     cfg = config or M2MConfig()
 
@@ -100,7 +113,9 @@ def m2m_router(
     remove_op_id = cfg.remove_operation_id or f"remove_{op_id_base}"
 
     db_dep = Depends(get_db)
-    user_dep = user_dep_or_none(login_dep)
+    # Only resolve the user when login is enforced — a raising login_dep must
+    # not fire on routes registered with login_required=False.
+    user_dep = user_dep_or_none(login_dep if cfg.login_required else None)
 
     # Resolve nested-field joins on the child schema once, at registration
     # time (mirrors read/list endpoints). Without this, nested BaseModel
@@ -108,35 +123,44 @@ def m2m_router(
     # async session.
     join_info = resolve_joins(child_model, child_schema)
 
-    # -- helpers --
+    spec = M2MSpec(
+        parent_model=parent_model,
+        child_model=child_model,
+        association_table=association_table,
+        child_schema=child_schema,
+        parent_fk_col=parent_fk_col,
+        child_fk_col=child_fk_col,
+        join_info=join_info,
+        config=cfg,
+        login_enforced=cfg.login_required and login_dep is not None,
+    )
 
-    async def _get_parent_or_404(db: AsyncSession, parent_id: int) -> None:
-        parent = await db.get(parent_model, parent_id)
-        if parent is None:
-            raise HTTPException(status_code=404, detail="Not found.")
+    if mcp_expose:
+        from crudit.registry import M2MDeclaration, register_m2m
 
-    async def _list_children(db: AsyncSession, parent_id: int) -> list[BaseModel]:
-        query = (
-            select(child_model)
-            .join(association_table, child_model.id == child_fk_col)
-            .where(parent_fk_col == parent_id)
+        register_m2m(
+            M2MDeclaration(
+                relation=mcp_relation or child_path_segment,
+                spec=spec,
+                parent_model=parent_model,
+                child_model=child_model,
+                login_dep=login_dep,
+            )
         )
-        options = join_info.eager_load_options(child_model, set())
-        if options:
-            query = query.options(*options)
-        rows = (await db.scalars(query)).unique().all()
-        join_info.sort_o2m_collections(list(rows))
-        return [child_schema.model_validate(row, from_attributes=True) for row in rows]
 
     # -- endpoints --
 
     async def list_endpoint(
         db: AsyncSession = db_dep,
+        current_user: Any = user_dep,
         **path_params: int,
     ) -> list[child_schema]:  # type: ignore[valid-type]
         parent_id = path_params[parent_pk_param]
-        await _get_parent_or_404(db, parent_id)
-        return await _list_children(db, parent_id)
+        ctx = CruditContext(user=current_user, path_params=dict(path_params))
+        try:
+            return await m2m_list_service(db, ctx, spec=spec, parent_id=parent_id)
+        except CruditNotFound:
+            raise HTTPException(status_code=404, detail="Not found.")
 
     async def add_endpoint(
         body: M2MIdsBody = Body(...),
@@ -145,45 +169,15 @@ def m2m_router(
         **path_params: int,
     ) -> list[child_schema]:  # type: ignore[valid-type]
         parent_id = path_params[parent_pk_param]
-        await _get_parent_or_404(db, parent_id)
-
-        if body.ids:
-            existing = set(
-                (
-                    await db.scalars(
-                        select(child_model.id).where(child_model.id.in_(body.ids))
-                    )
-                ).all()
+        ctx = CruditContext(user=current_user, path_params=dict(path_params))
+        try:
+            return await m2m_add_service(
+                db, ctx, spec=spec, parent_id=parent_id, child_ids=body.ids
             )
-            missing = set(body.ids) - existing
-            if missing:
-                raise HTTPException(
-                    status_code=422,
-                    detail={"ids": [f"IDs not found: {sorted(missing)}"]},
-                )
-
-            already_linked = set(
-                (
-                    await db.scalars(
-                        select(child_fk_col).where(
-                            parent_fk_col == parent_id,
-                            child_fk_col.in_(body.ids),
-                        )
-                    )
-                ).all()
-            )
-            new_ids = [cid for cid in body.ids if cid not in already_linked]
-            if new_ids:
-                await db.execute(
-                    association_table.insert().values(
-                        [{parent_fk_col.name: parent_id, child_fk_col.name: cid} for cid in new_ids]
-                    )
-                )
-                if cfg.after_add is not None:
-                    await call_hook(cfg.after_add, parent_id, new_ids, db, current_user)
-            await db.commit()
-
-        return await _list_children(db, parent_id)
+        except CruditNotFound:
+            raise HTTPException(status_code=404, detail="Not found.")
+        except CruditValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.fields or str(exc))
 
     async def remove_endpoint(
         body: M2MIdsBody = Body(...),
@@ -192,18 +186,13 @@ def m2m_router(
         **path_params: int,
     ) -> None:
         parent_id = path_params[parent_pk_param]
-        await _get_parent_or_404(db, parent_id)
-
-        if body.ids:
-            await db.execute(
-                delete(association_table).where(
-                    parent_fk_col == parent_id,
-                    child_fk_col.in_(body.ids),
-                )
+        ctx = CruditContext(user=current_user, path_params=dict(path_params))
+        try:
+            await m2m_remove_service(
+                db, ctx, spec=spec, parent_id=parent_id, child_ids=body.ids
             )
-            if cfg.after_remove is not None:
-                await call_hook(cfg.after_remove, parent_id, body.ids, db, current_user)
-            await db.commit()
+        except CruditNotFound:
+            raise HTTPException(status_code=404, detail="Not found.")
 
     # -- inject path parameter into signatures --
 

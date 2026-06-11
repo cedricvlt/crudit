@@ -1,28 +1,23 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import inspect as sa_inspect, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase, selectinload
+from sqlalchemy.orm import DeclarativeBase
 
+from crudit.context import CruditContext
 from crudit.create.config import CreateConfig
-from crudit.foreign_keys import (
-    check_foreign_keys,
-    detect_foreign_keys,
-    integrity_error_to_http as fk_integrity_error_to_http,
-)
+from crudit.create.service import create_service
+from crudit.exceptions import CruditNotFound, CruditValidationError
+from crudit.foreign_keys import detect_foreign_keys
 from crudit.joins import resolve_joins
-from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
-from crudit.types import PermissionDepFn
 from crudit.read.endpoint import detect_pk_field
 from crudit.signature import inject_path_params, patch_param_annotation
-from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints, integrity_error_to_http
-from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
+from crudit.types import PermissionDepFn
+from crudit.unique_constraints import detect_unique_constraints
+from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
 
 def _strip_path_filter_fields(
@@ -69,7 +64,8 @@ def create_endpoint(
     Register a POST endpoint that creates a new object and returns it serialised
     as `read_schema` with status 201.
 
-    Join resolution for `read_schema` happens once at registration time.
+    Thin wrapper around `create_service`. Join resolution for `read_schema`
+    happens once at registration time.
 
     `path_filters` maps a URL path param onto a model field. The matching
     field is removed from the request body schema and the value is auto-
@@ -84,170 +80,56 @@ def create_endpoint(
     unique_specs = detect_unique_constraints(model)
     fk_specs = detect_foreign_keys(model)
 
-    _model = model
-    _create_schema = _body_schema
-    _read_schema = read_schema
-    _config = config
-    _join_info = join_info
-    _pk_field = pk_field
-    _unique_specs = unique_specs
-    _fk_specs = fk_specs
-    # FK columns whose existence is either already validated upstream
-    # (parent_params do a 404 + permission check; path_filters copy a
-    # URL value) or set from a trusted source (auto-filled from
-    # current_user.id). Skipping them keeps the pre-flight scoped to
-    # FKs the client put in the request body.
-    _fk_skip_cols: frozenset[str] = frozenset(
-        {pp.child_field for pp in _config.parent_params}
-        | set(_path_filters.values())
-        | {"created_by_id", "updated_by_id"}
-    )
-
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
 
     async def _handler(
         request: Request,
-        body: BaseModel,  # annotation patched below to _create_schema
+        body: BaseModel,  # annotation patched below to _body_schema
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
         **_path_kwargs,  # absorbs path-filter params injected via __signature__
     ) -> Any:
-        # 1. Login check
-        check_route_permissions(current_user, _config.login_required)
-
-        # 2. Resolve parents: existence check + row-level permission on each parent
-        parent_values: dict[str, Any] = {}
-        for pp in _config.parent_params:
-            url_value = request.path_params.get(pp.url_param)
-            if url_value is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Missing path parameter '{pp.url_param}'.",
-                )
-            parent_pk = detect_pk_field(pp.model)
-            pk_col = getattr(pp.model, parent_pk)
-            pk_python_type = sa_inspect(pp.model).columns[parent_pk].type.python_type
-            url_value = pk_python_type(url_value)
-            q = select(pp.model).where(pk_col == url_value)
-            if has_allowed_users_relationship(pp.model):
-                q = q.options(selectinload(getattr(pp.model, "allowed_users")))
-            result = await db.execute(q)
-            parent = result.scalars().unique().one_or_none()
-            if parent is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"{pp.model.__name__} with id {url_value!r} not found.",
-                )
-            check_object_permissions(
-                parent,
-                pp.model,
-                current_user,
-                _config.login_required,
-            )
-            parent_values[pp.child_field] = url_value
-
-        # 3. Build ORM object from validated body
-        obj = _model(**body.model_dump())
-
-        # 4. Set parent FK fields (override anything in body)
-        for child_field, value in parent_values.items():
-            setattr(obj, child_field, value)
-
-        # 4b. Apply path_filters: copy URL value onto the mapped model field
-        for url_param, model_field in _path_filters.items():
-            url_value = request.path_params.get(url_param)
-            if url_value is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Missing path parameter '{url_param}'.",
-                )
-            col_python_type = sa_inspect(_model).columns[model_field].type.python_type
-            setattr(obj, model_field, col_python_type(url_value))
-
-        # 5. Auto-fill created_at when the column has no server_default
-        mapper = sa_inspect(_model)
-        if "created_at" in mapper.columns:
-            col = mapper.columns["created_at"]
-            if getattr(col, "server_default", None) is None:
-                obj.created_at = datetime.now(timezone.utc)
-
-        # 6. Auto-fill created_by from current_user.id
-        if "created_by_id" in mapper.columns and current_user is not None:
-            user_id = getattr(current_user, "id", None)
-            if user_id is not None:
-                obj.created_by_id = user_id
-
-        # 7. Field setters (can be async)
-        for field_name, setter in _config.field_setters.items():
-            setattr(obj, field_name, await call_hook(setter, obj, request, current_user))
-
-        # 8. before_create hook
-        if _config.before_create is not None:
-            obj = await call_hook(_config.before_create, obj, request, current_user)
-
-        # 9. Pre-flight foreign-key existence check on client-provided body FKs.
-        # Uses body.model_dump() (not vars(obj)) so the "only body FKs" scope
-        # is a hard contract independent of hook behavior.
-        if _fk_specs:
-            await check_foreign_keys(
-                db, _fk_specs, body.model_dump(), skip_cols=_fk_skip_cols,
-            )
-
-        # 10. Pre-flight unique constraint check
-        if _unique_specs:
-            await check_unique_constraints(db, _model, _unique_specs, vars(obj))
-
-        # 11. Persist
-        db.add(obj)
+        ctx = CruditContext(
+            user=current_user,
+            path_params=dict(request.path_params),
+            query_params=dict(request.query_params),
+            request=request,
+        )
         try:
-            await db.commit()
-        except IntegrityError as err:
-            await db.rollback()
-            raise (
-                integrity_error_to_http(err, _unique_specs)
-                or fk_integrity_error_to_http(err, _fk_specs)
-                or HTTPException(
-                    status_code=422,
-                    detail={"code": "VALIDATION_ERROR", "message": "Validation failed"},
-                )
+            return await create_service(
+                db,
+                ctx,
+                model=model,
+                body=body,
+                read_schema=read_schema,
+                config=config,
+                path_filters=_path_filters,
+                join_info=join_info,
+                pk_field=pk_field,
+                unique_specs=unique_specs,
+                fk_specs=fk_specs,
             )
+        except CruditNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except CruditValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
-        # 12. Reload with eager-loaded relationships from read_schema.
-        # `populate_existing` forces relationship attrs to be refreshed on
-        # the identity-mapped instance — otherwise setting only `*_by_id`
-        # leaves the matching `*_by` relationship unloaded (None) in the
-        # response when the session uses expire_on_commit=False.
-        pk_col = getattr(_model, _pk_field)
-        pk_value = getattr(obj, _pk_field)
-        reload_q = select(_model).where(pk_col == pk_value).execution_options(populate_existing=True)
-        options = _join_info.eager_load_options(_model, set())
-        if options:
-            reload_q = reload_q.options(*options)
-        result = await db.execute(reload_q)
-        obj = result.scalars().unique().one()
-
-        # 13. after_create hook
-        if _config.after_create is not None:
-            obj = await call_hook(_config.after_create, obj, request, current_user)
-
-        return _read_schema.model_validate(obj, from_attributes=True)
-
-    patch_param_annotation(_handler, "body", _create_schema)
-    inject_path_params(_handler, _path_filters, _model)
+    patch_param_annotation(_handler, "body", _body_schema)
+    inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
-    deps = list(_config.dependencies)
+    deps = list(config.dependencies)
     if permission_dep is not None:
-        deps.append(Depends(bind_perms(permission_dep, _config.permissions)))
-    op_id = operation_id or _config.operation_id or f"create_{model_snake_name(model)}"
+        deps.append(Depends(bind_perms(permission_dep, config.permissions)))
+    op_id = operation_id or config.operation_id or f"create_{model_snake_name(model)}"
     router.add_api_route(
         path,
         _handler,
         methods=["POST"],
-        response_model=_read_schema,
+        response_model=read_schema,
         status_code=201,
-        tags=_config.tags or None,
+        tags=config.tags or None,
         summary=summary or f"Create a new {model_name} row in the database.",
         operation_id=op_id,
         dependencies=deps,

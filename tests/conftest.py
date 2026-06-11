@@ -156,6 +156,22 @@ class Tag(Base):
 
 
 # ---------------------------------------------------------------------------
+# Registry isolation
+# ---------------------------------------------------------------------------
+
+import pytest
+
+from crudit import registry as crudit_registry
+
+
+@pytest.fixture(autouse=True)
+def _reset_crudit_registry():
+    crudit_registry.reset()
+    yield
+    crudit_registry.reset()
+
+
+# ---------------------------------------------------------------------------
 # Engine and session
 # ---------------------------------------------------------------------------
 

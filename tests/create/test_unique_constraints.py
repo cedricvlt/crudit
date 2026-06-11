@@ -159,12 +159,12 @@ async def test_create_integrity_error_fallback(engine, tag_setup, monkeypatch):
     concurrent transactions), the IntegrityError from commit() must still
     surface as 422 — not 500.
     """
-    from crudit.create import endpoint as create_endpoint_module
+    from crudit.create import service as create_service_module
 
     async def noop_check(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(create_endpoint_module, "check_unique_constraints", noop_check)
+    monkeypatch.setattr(create_service_module, "check_unique_constraints", noop_check)
 
     app = _make_tag_app(engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
