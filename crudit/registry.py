@@ -54,6 +54,11 @@ class CrudDeclaration:
     mcp_read_schema: type[BaseModel] | None = None
     # Verb names hidden from MCP-style consumers ("create", "delete", ... or "*").
     mcp_exclude: frozenset[str] = frozenset()
+    # Human-facing label (and plural) for MCP-style consumers, e.g. "Convention".
+    mcp_label: str | None = None
+    mcp_label_plural: str | None = None
+    # Alternative user vocabulary mapping to this entity, e.g. ("vente", "commande").
+    mcp_aliases: tuple[str, ...] = ()
 
 
 @dataclass

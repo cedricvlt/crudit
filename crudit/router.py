@@ -104,6 +104,9 @@ def crud_router(
     mcp_description: str | None = None,
     mcp_read_schema: type[BaseModel] | None = None,
     mcp_exclude: list[str] | None = None,
+    mcp_label: str | None = None,
+    mcp_label_plural: str | None = None,
+    mcp_aliases: tuple[str, ...] | list[str] | None = None,
 ) -> APIRouter:
     """
     Build and return an APIRouter with a configurable set of CRUD endpoints.
@@ -134,6 +137,8 @@ def crud_router(
       mcp_description → override the model-docstring description
       mcp_read_schema → lean read schema for MCP consumers (default: read_schema)
       mcp_exclude     → verbs to hide from MCP consumers ("create", ... or "*")
+      mcp_label / mcp_label_plural → human-facing label, e.g. "Convention(s)"
+      mcp_aliases     → alternative user vocabulary, e.g. ("vente", "commande")
     """
     active_crud = set(crud_endpoints if crud_endpoints is not None else _CRUD_ENDPOINTS)
     active_extra = set(extra_endpoints or [])
@@ -236,6 +241,9 @@ def crud_router(
                 login_dep=login_dep,
                 mcp_read_schema=mcp_read_schema,
                 mcp_exclude=_mcp_exclude,
+                mcp_label=mcp_label,
+                mcp_label_plural=mcp_label_plural,
+                mcp_aliases=tuple(mcp_aliases or ()),
             )
         )
 
