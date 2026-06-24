@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import Path, Query
@@ -74,7 +75,7 @@ def _make_filter_params(
     params.append(_param("in", str | None))
     params.append(_param("isnull", bool | None))
 
-    if python_type in (int, float) and not is_fk:
+    if python_type in (int, float, Decimal) and not is_fk:
         # Range operators are meaningless on foreign-key columns (e.g. company_id).
         for op in ("lt", "lte", "gt", "gte"):
             params.append(_param(op, python_type | None))
