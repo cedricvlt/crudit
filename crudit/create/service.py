@@ -176,13 +176,16 @@ async def create_service(
         )
 
     # 12. Reload with eager-loaded relationships from read_schema.
-    # `populate_existing` forces relationship attrs to be refreshed on
-    # the identity-mapped instance — otherwise setting only `*_by_id`
-    # leaves the matching `*_by` relationship unloaded (None) in the
-    # response when the session uses expire_on_commit=False.
+    # Expunge the just-created instance first so the reload builds a *fresh*
+    # object with every loader option applied — like a plain read. Reloading
+    # with `populate_existing` on the identity-mapped instance is unreliable
+    # here: with expire_on_commit=False it leaves some relationships (and the
+    # `*_by` audit relations set only via `*_by_id`) unloaded, which then raise
+    # MissingGreenlet when the response schema serializes them.
     pk_col = getattr(model, pk_field)
     pk_value = getattr(obj, pk_field)
-    reload_q = select(model).where(pk_col == pk_value).execution_options(populate_existing=True)
+    db.expunge(obj)
+    reload_q = select(model).where(pk_col == pk_value)
     options = join_info.eager_load_options(model, set())
     if options:
         reload_q = reload_q.options(*options)
