@@ -986,6 +986,14 @@ Company scoping expects the user to be **multi-company**: the user model exposes
 `companies` many-to-many relationship, and crudit emits `company_id IN (<the user's
 company ids>)`. A user belonging to no company sees no company-scoped rows.
 
+> **`company_id` must be the tenant foreign key.** Scoping keys off the attribute
+> *name*, so crudit checks that `company_id` actually points at the table your
+> `companies` relationship targets, and skips scoping when it provably points
+> somewhere else — a model that reuses the name for an unrelated FK is left alone
+> rather than silently filtered to zero rows. The check is conservative and fails
+> closed: a `company_id` with no foreign key, or a user object crudit cannot
+> inspect, stays scoped.
+
 > **The `companies` collection must be loaded** before the request handler reads it —
 > eager-load it (`lazy="selectin"` on the relationship, or load it in your auth
 > dependency). The handler is async, so a lazy collection would raise `MissingGreenlet`.
