@@ -16,6 +16,7 @@ from crudit.list.config import ListConfig
 from crudit.list.endpoint import list_endpoint
 from crudit.list.service import list_service
 from crudit.m2m.config import M2MConfig
+from crudit.mount import include_nested_router
 from crudit.m2m.endpoint import M2MIdsBody, m2m_router
 from crudit.m2m.service import (
     M2MSpec,
@@ -44,6 +45,7 @@ __all__ = [
     "CrudDeclaration",
     "CruditContext",
     "hook_request",
+    "include_nested_router",
     "m2m_router",
     "M2MConfig",
     "M2MDeclaration",

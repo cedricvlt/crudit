@@ -13,7 +13,7 @@ from crudit.exceptions import CruditNotFound
 from crudit.joins import resolve_joins
 from crudit.read.config import ReadConfig
 from crudit.read.service import detect_pk_field, read_service
-from crudit.signature import patch_param_annotation
+from crudit.signature import inject_path_params, patch_param_annotation
 from crudit.types import PermissionDepFn
 from crudit.utils import (
     bind_perms,
@@ -31,6 +31,7 @@ def read_endpoint(
     schema: type[BaseModel],
     config: ReadConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -41,11 +42,18 @@ def read_endpoint(
 
     Thin wrapper around `read_service`. Translates `CruditNotFound` to HTTP 404.
     Join resolution and PK detection happen once at registration time.
+
+    `path_filters` is only *declared* here, not applied: the row is looked up by
+    its primary key, so the parent id in the URL does not narrow the query. It
+    still has to appear in the signature, otherwise the parent placeholder of a
+    nested route (``/cities/{city_id}/districts/{id}``) is missing from the
+    OpenAPI schema and generated clients cannot type the call.
     """
     join_info = resolve_joins(model, schema)
     validate_computed_fields(config.computed_fields, model, schema)
     pk_field = detect_pk_field(model)
     pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -55,6 +63,7 @@ def read_endpoint(
         id: Any,  # annotation patched below to pk_python_type
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
+        **_path_kwargs,  # absorbs path-filter params injected via __signature__
     ) -> Any:
         ctx = CruditContext(
             user=current_user,
@@ -77,6 +86,7 @@ def read_endpoint(
             raise HTTPException(status_code=404, detail="Not found.")
 
     patch_param_annotation(_handler, "id", pk_python_type)
+    inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
     deps = list(config.dependencies)

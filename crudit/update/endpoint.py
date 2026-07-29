@@ -13,7 +13,7 @@ from crudit.exceptions import CruditNotFound
 from crudit.foreign_keys import detect_foreign_keys
 from crudit.joins import resolve_joins
 from crudit.read.endpoint import detect_pk_field
-from crudit.signature import patch_param_annotation
+from crudit.signature import inject_path_params, patch_param_annotation
 from crudit.types import PermissionDepFn
 from crudit.unique_constraints import detect_unique_constraints
 from crudit.update.config import UpdateConfig
@@ -29,6 +29,7 @@ def update_endpoint(
     read_schema: type[BaseModel],
     config: UpdateConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -42,12 +43,15 @@ def update_endpoint(
     Thin wrapper around `update_service`. Only fields present in the request body
     are applied (exclude_unset semantics). Join resolution for `read_schema`
     happens once at registration time.
+
+    `path_filters` is only *declared* here, not applied — see `read_endpoint`.
     """
     join_info = resolve_joins(model, read_schema)
     pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
     unique_specs = detect_unique_constraints(model)
     fk_specs = detect_foreign_keys(model)
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -58,6 +62,7 @@ def update_endpoint(
         body: BaseModel,  # annotation patched below to update_schema
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
+        **_path_kwargs,  # absorbs path-filter params injected via __signature__
     ) -> Any:
         ctx = CruditContext(
             user=current_user,
@@ -84,6 +89,7 @@ def update_endpoint(
 
     patch_param_annotation(_handler, "id", _pk_python_type)
     patch_param_annotation(_handler, "body", update_schema)
+    inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
     deps = list(config.dependencies)

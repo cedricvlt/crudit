@@ -12,7 +12,7 @@ from crudit.delete.config import DeleteConfig
 from crudit.delete.service import delete_service
 from crudit.exceptions import CruditNotFound
 from crudit.read.endpoint import detect_pk_field
-from crudit.signature import patch_param_annotation
+from crudit.signature import inject_path_params, patch_param_annotation
 from crudit.types import PermissionDepFn
 from crudit.utils import bind_perms, get_error_responses, model_snake_name, user_dep_or_none
 
@@ -23,6 +23,7 @@ def delete_endpoint(
     model: type[DeclarativeBase],
     config: DeleteConfig,
     *,
+    path_filters: dict[str, str] | None = None,
     login_dep: Callable | None = None,
     permission_dep: PermissionDepFn | None = None,
     summary: str | None = None,
@@ -34,9 +35,12 @@ def delete_endpoint(
 
     Thin wrapper around `delete_service`. Row-level permission checks
     (company_id / allowed_users) are applied before deletion.
+
+    `path_filters` is only *declared* here, not applied — see `read_endpoint`.
     """
     pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
+    _path_filters: dict[str, str] = path_filters or {}
 
     db_dep = Depends(get_db)
     user_dep = user_dep_or_none(login_dep)
@@ -46,6 +50,7 @@ def delete_endpoint(
         id: Any,  # annotation patched below to _pk_python_type
         db: AsyncSession = db_dep,
         current_user: Any = user_dep,
+        **_path_kwargs,  # absorbs path-filter params injected via __signature__
     ) -> Response:
         ctx = CruditContext(
             user=current_user,
@@ -67,6 +72,7 @@ def delete_endpoint(
         return Response(status_code=204)
 
     patch_param_annotation(_handler, "id", _pk_python_type)
+    inject_path_params(_handler, _path_filters, model)
 
     model_name = model.__name__
     deps = list(config.dependencies)

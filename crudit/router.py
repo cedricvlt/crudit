@@ -206,15 +206,15 @@ def crud_router(
 
     if "read" in active:
         read_cfg = read or _from_shared(ReadConfig, shared, **_shared_kwargs)
-        read_endpoint(router, "/{id}", model, read_schema, read_cfg, **_endpoint_kwargs)
+        read_endpoint(router, "/{id}", model, read_schema, read_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "update" in active:
         update_cfg = update or _from_shared(UpdateConfig, shared, **_shared_kwargs)
-        update_endpoint(router, "/{id}", model, update_schema, read_schema, update_cfg, **_endpoint_kwargs)
+        update_endpoint(router, "/{id}", model, update_schema, read_schema, update_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if "delete" in active:
         delete_cfg = delete or _from_shared(DeleteConfig, shared, **_shared_kwargs)
-        delete_endpoint(router, "/{id}", model, delete_cfg, **_endpoint_kwargs)
+        delete_endpoint(router, "/{id}", model, delete_cfg, **_path_filter_kwargs, **_endpoint_kwargs)
 
     if mcp_expose:
         _filters = path_filters or {}

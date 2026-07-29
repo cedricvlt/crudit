@@ -30,11 +30,16 @@ from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake
 
 
 class _DefaultOptionSchema(BaseModel):
-    """Zero-config option schema: serialises to {id, label} with label from `name`."""
+    """Zero-config option schema: serialises to {id, label} with label from `name`.
+
+    ``id`` is typed ``int`` rather than ``Any`` so the OpenAPI schema (and the
+    clients generated from it) get a usable type. A model with a non-integer
+    primary key has to pass an explicit ``option_schema``.
+    """
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    id: Any
+    id: int
     name: str = Field(exclude=True)
 
     @computed_field
