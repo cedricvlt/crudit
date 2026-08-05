@@ -66,3 +66,19 @@ async def test_custom_search_fn(seed, make_client):
         data = r.json()["data"]
         assert len(data) == 1
         assert data[0]["label"] == "Montmartre"
+
+
+@pytest.mark.asyncio
+async def test_search_m2o_not_declared_on_schema(seed, make_client):
+    # The default option schema is {id, label}: it declares no `city`, so the
+    # m2o chain is absent from the join tree and cannot be JOINed. Searching it
+    # must still work (resolved as an EXISTS) rather than raising.
+    async with await make_client(
+        OptionsConfig(
+            login_required=False,
+            search_fields=["city.name"],
+        )
+    ) as client:
+        r = await client.get("/cities/1/districts?q=Par")
+        assert r.status_code == 200
+        assert {d["label"] for d in r.json()["data"]} == {"Montmartre", "Marais"}

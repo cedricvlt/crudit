@@ -445,6 +445,22 @@ def resolve_nested_column(
     return col
 
 
+def _is_in_join_tree(rel_parts: list[str], join_info: JoinInfo) -> bool:
+    """True when every segment of a relationship chain is in the join tree.
+
+    Mirrors the walk :func:`collect_needed_joins` does: a chain it declines to
+    JOIN (because the response schema does not declare it) is one the JOIN-based
+    resolver cannot serve either.
+    """
+    nodes = join_info.nodes
+    for rel_name in rel_parts:
+        node = nodes.get(rel_name)
+        if node is None:
+            return False
+        nodes = node.children
+    return True
+
+
 def resolve_filter_path(
     field_path: str,
     model: type[DeclarativeBase],
@@ -458,14 +474,17 @@ def resolve_filter_path(
 
     Two resolution modes:
 
-    - **Pure many-to-one chains** (or a plain column): ``wrappers`` is empty and
-      the leaf is resolved with :func:`resolve_nested_column`, preserving the
-      existing JOIN-based behavior, the response-schema requirement, and the
-      error messages exactly.
-    - **Chains traversing a collection** (o2m / m2m): resolved directly from the
-      SQLAlchemy mapper — *independent of the response schema* — so a collection
-      can be filtered without being declared on the schema. Filtering uses an
-      ``EXISTS`` subquery, which neither multiplies rows nor needs a JOIN.
+    - **Pure many-to-one chains declared on the response schema** (or a plain
+      column): ``wrappers`` is empty and the leaf is resolved with
+      :func:`resolve_nested_column`, preserving the existing JOIN-based
+      behavior and the error messages exactly.
+    - **Chains traversing a collection** (o2m / m2m), **and m2o chains the
+      response schema does not declare**: resolved directly from the SQLAlchemy
+      mapper — *independent of the response schema* — so a relationship can be
+      filtered/searched without being embedded in the response. Uses an
+      ``EXISTS`` subquery, which neither multiplies rows nor needs a JOIN
+      (an undeclared relationship is not in the join tree, so
+      :func:`collect_needed_joins` never emits a JOIN for it).
     """
     if "." not in field_path:
         return resolve_nested_column(field_path, model, join_info), []
@@ -484,8 +503,12 @@ def resolve_filter_path(
         wrappers.append((getattr(current_model, rel_name), bool(rel.uselist)))
         current_model = rel.mapper.class_
 
-    # Pure m2o chain: defer to the JOIN-based resolver (behavior unchanged).
-    if not any(is_collection for _, is_collection in wrappers):
+    # Pure m2o chain the join tree knows about: defer to the JOIN-based resolver
+    # (behavior unchanged). One the schema does not declare falls through to the
+    # EXISTS form below — `.has()` per m2o segment.
+    if not any(is_collection for _, is_collection in wrappers) and _is_in_join_tree(
+        rel_parts, join_info
+    ):
         return resolve_nested_column(field_path, model, join_info), []
 
     col = getattr(current_model, col_name, None)
