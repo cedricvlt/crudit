@@ -18,8 +18,16 @@ class M2MConfig:
     list_operation_id: str | None = None
     add_operation_id: str | None = None
     remove_operation_id: str | None = None
-    # Called after links are inserted/deleted, before commit, in the same
-    # transaction: (parent_id, child_ids, session, current_user). child_ids holds
-    # only the ids actually added (add) or the requested ids (remove).
+    reorder_operation_id: str | None = None
+    # Name of the association-table column holding each link's position. Setting
+    # it makes the relationship ordered: the list endpoint sorts by it, newly
+    # added links are appended after the existing ones, and a
+    # ``POST {base_path}/reorder`` endpoint is registered. Unordered when None.
+    order_column: str | None = None
+    # Called after links are inserted/deleted/reordered, before commit, in the
+    # same transaction: (parent_id, child_ids, session, current_user). child_ids
+    # holds only the ids actually added (add) or the requested ids (remove /
+    # reorder).
     after_add: M2MHookFn | None = None
     after_remove: M2MHookFn | None = None
+    after_reorder: M2MHookFn | None = None

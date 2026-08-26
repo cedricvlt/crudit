@@ -25,6 +25,8 @@ def make_app(
     child_path_segment: str | None = None,
     after_add=None,
     after_remove=None,
+    after_reorder=None,
+    order_column: str | None = None,
 ) -> FastAPI:
     app = FastAPI()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -45,6 +47,8 @@ def make_app(
             child_path_segment=child_path_segment,
             after_add=after_add,
             after_remove=after_remove,
+            after_reorder=after_reorder,
+            order_column=order_column,
         ),
         login_dep=login_dep,
         permission_dep=permission_dep,
@@ -62,6 +66,8 @@ def make_client(engine):
         child_path_segment: str | None = None,
         after_add=None,
         after_remove=None,
+        after_reorder=None,
+        order_column: str | None = None,
     ) -> AsyncClient:
         app = make_app(
             engine,
@@ -71,6 +77,8 @@ def make_client(engine):
             child_path_segment=child_path_segment,
             after_add=after_add,
             after_remove=after_remove,
+            after_reorder=after_reorder,
+            order_column=order_column,
         )
         return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

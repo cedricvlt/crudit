@@ -23,6 +23,9 @@ district_allowed_users = Table(
     Base.metadata,
     Column("district_id", Integer, ForeignKey("districts.id"), primary_key=True),
     Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    # Only read when a m2m_router opts in with M2MConfig(order_column=...);
+    # left NULL and ignored everywhere else.
+    Column("sort_order", Integer),
 )
 
 

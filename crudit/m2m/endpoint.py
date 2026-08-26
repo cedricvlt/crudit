@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from fastapi.params import Depends as DependsType
 from pydantic import BaseModel
 from sqlalchemy import Column, Table
@@ -18,6 +18,7 @@ from crudit.m2m.service import (
     m2m_add_service,
     m2m_list_service,
     m2m_remove_service,
+    m2m_reorder_service,
 )
 from crudit.types import PermissionDepFn
 from crudit.utils import (
@@ -93,6 +94,15 @@ def m2m_router(
     parent_fk_col, child_fk_col = _resolve_association_columns(
         association_table, parent_model, child_model
     )
+    order_col = None
+    if cfg.order_column is not None:
+        if cfg.order_column not in association_table.c:
+            raise ValueError(
+                f"Association table {association_table.name!r} has no "
+                f"{cfg.order_column!r} column. Add one (e.g. via an OrderedMixin "
+                "association model) to use M2MConfig.order_column."
+            )
+        order_col = association_table.c[cfg.order_column]
     parent_pk_param = parent_fk_col.name
     child_path_segment = cfg.child_path_segment or (child_model.__name__.lower() + "s")
     base_path = f"{prefix}/{{{parent_pk_param}}}/{child_path_segment}"
@@ -111,6 +121,7 @@ def m2m_router(
     list_op_id = cfg.list_operation_id or f"list_{op_id_base}"
     add_op_id = cfg.add_operation_id or f"add_{op_id_base}"
     remove_op_id = cfg.remove_operation_id or f"remove_{op_id_base}"
+    reorder_op_id = cfg.reorder_operation_id or f"reorder_{op_id_base}"
 
     db_dep = Depends(get_db)
     # Only resolve the user when login is enforced — a raising login_dep must
@@ -133,6 +144,7 @@ def m2m_router(
         join_info=join_info,
         config=cfg,
         login_enforced=cfg.login_required and login_dep is not None,
+        order_col=order_col,
     )
 
     if mcp_expose:
@@ -194,9 +206,29 @@ def m2m_router(
         except CruditNotFound:
             raise HTTPException(status_code=404, detail="Not found.")
 
+    async def reorder_endpoint(
+        body: M2MIdsBody = Body(...),
+        db: AsyncSession = db_dep,
+        current_user: Any = user_dep,
+        **path_params: int,
+    ) -> Response:
+        parent_id = path_params[parent_pk_param]
+        ctx = CruditContext(user=current_user, path_params=dict(path_params))
+        try:
+            await m2m_reorder_service(
+                db, ctx, spec=spec, parent_id=parent_id, child_ids=body.ids
+            )
+        except CruditNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return Response(status_code=204)
+
     # -- inject path parameter into signatures --
 
-    for fn in (list_endpoint, add_endpoint, remove_endpoint):
+    endpoints = [list_endpoint, add_endpoint, remove_endpoint]
+    if order_col is not None:
+        endpoints.append(reorder_endpoint)
+
+    for fn in endpoints:
         sig = inspect.signature(fn)
         params = [p for p in sig.parameters.values() if p.kind != inspect.Parameter.VAR_KEYWORD]
         params.append(
@@ -245,5 +277,22 @@ def m2m_router(
         operation_id=remove_op_id,
         description=f"Remove {child_model.__name__} items from a {parent_model.__name__}. Idempotent.",
     )
+
+    if order_col is not None:
+        router.add_api_route(
+            f"{base_path}/reorder",
+            reorder_endpoint,
+            methods=["POST"],
+            status_code=204,
+            response_class=Response,
+            dependencies=resolved_deps,
+            responses=get_error_responses(*_login_codes, 403, 404),
+            name=f"{model_name.lower()}_m2m_reorder",
+            operation_id=reorder_op_id,
+            description=(
+                f"Reorder the {child_model.__name__} items linked to a "
+                f"{parent_model.__name__} by providing an ordered list of IDs."
+            ),
+        )
 
     return router

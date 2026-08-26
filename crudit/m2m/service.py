@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pydantic import BaseModel
-from sqlalchemy import Column, Table, delete, select
+from sqlalchemy import Column, Table, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,6 +37,9 @@ class M2MSpec:
     # router behaviour: ``config.login_required`` only takes effect when a
     # ``login_dep`` was wired at registration time.
     login_enforced: bool = True
+    # Association column holding each link's position, resolved from
+    # ``config.order_column``. None keeps the relationship unordered.
+    order_col: Column | None = None
 
 
 async def get_parent_or_not_found(
@@ -71,6 +74,10 @@ async def _list_children(db: AsyncSession, spec: M2MSpec, parent_id: int) -> lis
         .join(spec.association_table, spec.child_model.id == spec.child_fk_col)
         .where(spec.parent_fk_col == parent_id)
     )
+    if spec.order_col is not None:
+        # nulls_last keeps links predating the order column (or written outside
+        # this router) at the end rather than jumping to the front.
+        query = query.order_by(spec.order_col.nulls_last(), spec.child_fk_col)
     options = spec.join_info.eager_load_options(spec.child_model, set())
     if options:
         query = query.options(*options)
@@ -143,14 +150,21 @@ async def m2m_add_service(
         )
         new_ids = [cid for cid in child_ids if cid not in already_linked]
         if new_ids:
-            await db.execute(
-                spec.association_table.insert().values(
-                    [
-                        {spec.parent_fk_col.name: parent_id, spec.child_fk_col.name: cid}
-                        for cid in new_ids
-                    ]
+            rows = [
+                {spec.parent_fk_col.name: parent_id, spec.child_fk_col.name: cid}
+                for cid in new_ids
+            ]
+            if spec.order_col is not None:
+                # Append after the links already there (coalesce covers both an
+                # empty parent and rows left NULL before the column existed).
+                start = await db.scalar(
+                    select(func.coalesce(func.max(spec.order_col), -1) + 1).where(
+                        spec.parent_fk_col == parent_id
+                    )
                 )
-            )
+                for offset, row in enumerate(rows):
+                    row[spec.order_col.name] = start + offset
+            await db.execute(spec.association_table.insert().values(rows))
             if spec.config.after_add is not None:
                 await call_hook(spec.config.after_add, parent_id, new_ids, db, ctx.user)
         await db.commit()
@@ -183,3 +197,56 @@ async def m2m_remove_service(
         if spec.config.after_remove is not None:
             await call_hook(spec.config.after_remove, parent_id, child_ids, db, ctx.user)
         await db.commit()
+
+
+async def m2m_reorder_service(
+    db: AsyncSession,
+    ctx: CruditContext,
+    *,
+    spec: M2MSpec,
+    parent_id: int,
+    child_ids: list[int],
+) -> None:
+    """Renumber the parent's links so they follow ``child_ids`` (0-based).
+
+    Only available when ``M2MConfig.order_column`` is set. Ids missing from the
+    payload keep their current position, so a partial list is accepted but will
+    interleave — callers are expected to send the full order.
+
+    Raises CruditNotFound when the parent does not exist, or when an id is not
+    linked to it.
+    """
+    if spec.order_col is None:
+        raise ValueError(
+            f"{spec.association_table.name!r} is not ordered: set "
+            "M2MConfig.order_column to reorder its links."
+        )
+    check_route_permissions(ctx.user, spec.login_enforced)
+    await get_parent_or_not_found(db, ctx, spec, parent_id)
+
+    if not child_ids:
+        return
+
+    linked = set(
+        (
+            await db.scalars(
+                select(spec.child_fk_col).where(spec.parent_fk_col == parent_id)
+            )
+        ).all()
+    )
+    missing = [cid for cid in child_ids if cid not in linked]
+    if missing:
+        raise CruditNotFound(f"IDs not linked to {parent_id!r}: {sorted(missing)}.")
+
+    for position, child_id in enumerate(child_ids):
+        await db.execute(
+            spec.association_table.update()
+            .where(
+                spec.parent_fk_col == parent_id,
+                spec.child_fk_col == child_id,
+            )
+            .values({spec.order_col.name: position})
+        )
+    if spec.config.after_reorder is not None:
+        await call_hook(spec.config.after_reorder, parent_id, child_ids, db, ctx.user)
+    await db.commit()
