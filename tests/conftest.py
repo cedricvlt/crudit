@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest_asyncio
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Table, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Table, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -156,6 +156,24 @@ class Tag(Base):
     city_id: Mapped[int] = mapped_column(ForeignKey("cities.id"))
 
     _order_fields = ("name",)
+
+
+class Coupon(Base):
+    """Partial unique index: `code` is unique only when non-empty."""
+
+    __tablename__ = "coupons"
+    __table_args__ = (
+        Index(
+            "ix_coupon_code_partial",
+            "code",
+            unique=True,
+            sqlite_where=text("code <> ''"),
+            postgresql_where=text("code <> ''"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), default="")
 
 
 # ---------------------------------------------------------------------------

@@ -176,3 +176,27 @@ async def test_create_integrity_error_fallback(engine, tag_setup, monkeypatch):
     detail = r.json()["detail"]
     assert detail["code"] == "VALIDATION_ERROR"
     assert detail["message"] == "Validation failed"
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight: partial unique Index (rows outside its WHERE never conflict)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_partial_unique_index_scopes_preflight(db_session: AsyncSession):
+    from fastapi import HTTPException
+
+    from crudit.unique_constraints import check_unique_constraints, detect_unique_constraints
+    from tests.conftest import Coupon
+
+    specs = detect_unique_constraints(Coupon)
+    db_session.add_all([Coupon(id=1, code=""), Coupon(id=2, code="SUMMER")])
+    await db_session.commit()
+
+    # Outside the predicate: another empty code is allowed.
+    await check_unique_constraints(db_session, Coupon, specs, {"code": ""})
+
+    # Inside it: a duplicate set code still conflicts.
+    with pytest.raises(HTTPException) as exc:
+        await check_unique_constraints(db_session, Coupon, specs, {"code": "SUMMER"})
+    assert exc.value.detail["fields"] == {"code": ["Already exists"]}

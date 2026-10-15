@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from fastapi import HTTPException
-from sqlalchemy import UniqueConstraint, literal, select
+from sqlalchemy import ColumnElement, Index, UniqueConstraint, literal, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
@@ -16,6 +16,8 @@ class UniqueSpec:
 
     name: str | None
     columns: tuple[str, ...]
+    # Predicate of a partial unique index: rows outside it never conflict.
+    where: ColumnElement[bool] | None = None
 
 
 def detect_unique_constraints(
@@ -27,7 +29,9 @@ def detect_unique_constraints(
     - ``mapped_column(..., unique=True)`` (auto-translated by SQLAlchemy to a
       ``UniqueConstraint`` in ``Table.constraints``).
     - Explicit ``UniqueConstraint(..., name=...)`` in ``__table_args__``.
-    - ``Index(..., unique=True)`` in ``__table_args__``.
+    - ``Index(..., unique=True)`` in ``__table_args__``, including partial
+      indexes (``postgresql_where`` / ``sqlite_where``), whose predicate then
+      scopes the pre-flight check.
 
     Skips the primary-key columns (already enforced) and de-duplicates by
     column tuple so a column-level ``unique=True`` plus a redundant
@@ -54,9 +58,19 @@ def detect_unique_constraints(
         if not cols or frozenset(cols) == pk_cols or cols in seen:
             continue
         seen.add(cols)
-        specs.append(UniqueSpec(name=index.name, columns=cols))
+        specs.append(
+            UniqueSpec(name=index.name, columns=cols, where=_index_where(index))
+        )
 
     return specs
+
+
+def _index_where(index: Index) -> ColumnElement[bool] | None:
+    for dialect in ("postgresql", "sqlite"):
+        where = index.dialect_options[dialect].get("where")
+        if where is not None:
+            return where
+    return None
 
 
 def _violation_exception(spec: UniqueSpec) -> HTTPException:
@@ -89,6 +103,8 @@ async def check_unique_constraints(
         q = select(literal(1)).select_from(model)
         for col_name, val in zip(spec.columns, col_values):
             q = q.where(getattr(model, col_name) == val)
+        if spec.where is not None:
+            q = q.where(spec.where)
         if exclude_pk is not None:
             pk_name, pk_value = exclude_pk
             q = q.where(getattr(model, pk_name) != pk_value)
