@@ -18,7 +18,7 @@ from crudit.list.filters import (
 from crudit.list.pagination import apply_pagination, resolve_pagination
 from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
-from crudit.permissions import apply_permissions
+from crudit.permissions import apply_permissions, ensure_path_parents_visible
 from crudit.schemas import PaginatedResponse
 from crudit.utils import call_hook
 
@@ -60,6 +60,8 @@ async def list_service(
 
     query = select(model)
     query = apply_path_filters(query, model, path_filters or {}, ctx.path_params)
+    if path_filters:
+        await ensure_path_parents_visible(db, model, path_filters, ctx.path_params, ctx.user)
     query = apply_default_filters(query, model, config.default_filters)
     query = apply_permissions(query, model, ctx.user, config.login_required)
 

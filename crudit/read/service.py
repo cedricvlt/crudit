@@ -10,7 +10,13 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.context import CruditContext
 from crudit.exceptions import CruditConfigError, CruditNotFound
 from crudit.joins import JoinInfo, resolve_joins
-from crudit.permissions import check_object_permissions, has_allowed_users_relationship
+from crudit.list.filters import apply_path_filters
+from crudit.permissions import (
+    apply_scope_via,
+    check_object_permissions,
+    ensure_path_parents_visible,
+    has_allowed_users_relationship,
+)
 from crudit.read.config import ReadConfig
 from crudit.utils import call_hook
 
@@ -39,8 +45,13 @@ async def read_service(
     id: Any,
     join_info: JoinInfo | None = None,
     pk_field: str | None = None,
+    path_filters: dict[str, str] | None = None,
 ) -> BaseModel:
     """Fetch a single object by primary key and return it serialised.
+
+    ``path_filters`` narrow the lookup to the URL's parent (a district of
+    *this* city), which must itself be visible to the user; a ``_scope_via``
+    child out of reach through its parent is not found either.
 
     Raises:
         CruditNotFound: when no row matches `id`.
@@ -59,6 +70,10 @@ async def read_service(
 
     pk_col = getattr(model, pk_field)
     query = select(model).where(pk_col == id)
+    if path_filters:
+        query = apply_path_filters(query, model, path_filters, ctx.path_params)
+        await ensure_path_parents_visible(db, model, path_filters, ctx.path_params, ctx.user)
+    query = apply_scope_via(query, model, ctx.user)
 
     options = join_info.eager_load_options(model, set())
     if load_allowed_users:

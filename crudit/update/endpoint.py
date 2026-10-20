@@ -44,7 +44,7 @@ def update_endpoint(
     are applied (exclude_unset semantics). Join resolution for `read_schema`
     happens once at registration time.
 
-    `path_filters` is only *declared* here, not applied — see `read_endpoint`.
+    `path_filters` narrow the lookup to the URL's parent — see `read_endpoint`.
     """
     join_info = resolve_joins(model, read_schema)
     pk_field = detect_pk_field(model)
@@ -83,6 +83,7 @@ def update_endpoint(
                 pk_field=pk_field,
                 unique_specs=unique_specs,
                 fk_specs=fk_specs,
+                path_filters=_path_filters,
             )
         except CruditNotFound:
             raise HTTPException(status_code=404, detail="Not found.")

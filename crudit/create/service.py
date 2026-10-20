@@ -20,8 +20,11 @@ from crudit.foreign_keys import (
 )
 from crudit.joins import JoinInfo, resolve_joins
 from crudit.permissions import (
+    apply_scope_via,
+    check_company_assignment,
     check_object_permissions,
     check_route_permissions,
+    ensure_path_parents_visible,
     has_allowed_users_relationship,
 )
 from crudit.read.service import detect_pk_field
@@ -96,7 +99,7 @@ async def create_service(
         pk_col = getattr(pp.model, parent_pk)
         pk_python_type = sa_inspect(pp.model).columns[parent_pk].type.python_type
         url_value = pk_python_type(url_value)
-        q = select(pp.model).where(pk_col == url_value)
+        q = apply_scope_via(select(pp.model).where(pk_col == url_value), pp.model, ctx.user)
         if has_allowed_users_relationship(pp.model):
             q = q.options(selectinload(getattr(pp.model, "allowed_users")))
         result = await db.execute(q)
@@ -110,6 +113,10 @@ async def create_service(
             config.login_required,
         )
         parent_values[pp.child_field] = url_value
+
+    # 2b. Nested route: the URL's parent must be visible to the user.
+    if _path_filters:
+        await ensure_path_parents_visible(db, model, _path_filters, ctx.path_params, ctx.user)
 
     # 3. Build ORM object from validated body
     obj = model(**body.model_dump())
@@ -151,9 +158,10 @@ async def create_service(
     # 9. Pre-flight foreign-key existence check on client-provided body FKs.
     # Uses body.model_dump() (not vars(obj)) so the "only body FKs" scope
     # is a hard contract independent of hook behavior.
+    check_company_assignment(model, {"company_id": getattr(obj, "company_id", None)}, ctx.user)
     if fk_specs:
         await check_foreign_keys(
-            db, fk_specs, body.model_dump(), skip_cols=fk_skip_cols,
+            db, fk_specs, body.model_dump(), skip_cols=fk_skip_cols, user=ctx.user,
         )
 
     # 10. Pre-flight unique constraint check

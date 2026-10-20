@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Callable
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from crudit.joins import assert_no_property_fields, collect_sortable_field_paths
 from crudit.list.config import ListConfig
 from crudit.list.filters import extract_filter_params
 from crudit.list.service import list_service
+from crudit.exceptions import CruditNotFound
 from crudit.permissions import apply_permissions  # noqa: F401  (kept for re-export compat)
 from crudit.schemas import PaginatedResponse
 from crudit.signature import inject_path_params, inject_query_params
@@ -87,23 +88,26 @@ def list_endpoint(
             query_params=dict(request.query_params),
             request=request,
         )
-        result = await list_service(
-            db,
-            ctx,
-            model=model,
-            schema=schema,
-            config=config,
-            path_filters=_path_filters,
-            join_info=join_info,
-            q=q,
-            sort=sort,
-            page=page,
-            items_per_page=items_per_page,
-            offset=offset,
-            limit=limit,
-            count_only=count_only,
-            filter_params=extract_filter_params(request.query_params),
-        )
+        try:
+            result = await list_service(
+                db,
+                ctx,
+                model=model,
+                schema=schema,
+                config=config,
+                path_filters=_path_filters,
+                join_info=join_info,
+                q=q,
+                sort=sort,
+                page=page,
+                items_per_page=items_per_page,
+                offset=offset,
+                limit=limit,
+                count_only=count_only,
+                filter_params=extract_filter_params(request.query_params),
+            )
+        except CruditNotFound:
+            raise HTTPException(status_code=404, detail="Not found.")
         if count_only:
             return JSONResponse({"totalCount": result})
         return result

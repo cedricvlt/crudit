@@ -11,8 +11,11 @@ from sqlalchemy.orm import DeclarativeBase, selectinload
 from crudit.context import CruditContext, hook_request
 from crudit.delete.config import DeleteConfig
 from crudit.exceptions import CruditNotFound
+from crudit.list.filters import apply_path_filters
 from crudit.permissions import (
+    apply_scope_via,
     check_object_permissions,
+    ensure_path_parents_visible,
     check_route_permissions,
     has_allowed_users_relationship,
 )
@@ -28,6 +31,7 @@ async def delete_service(
     config: DeleteConfig,
     id: Any,
     pk_field: str | None = None,
+    path_filters: dict[str, str] | None = None,
 ) -> None:
     """Delete a row after row-level permission checks.
 
@@ -45,6 +49,10 @@ async def delete_service(
     # 2. Fetch object
     pk_col = getattr(model, pk_field)
     query = select(model).where(pk_col == id)
+    if path_filters:
+        query = apply_path_filters(query, model, path_filters, ctx.path_params)
+        await ensure_path_parents_visible(db, model, path_filters, ctx.path_params, ctx.user)
+    query = apply_scope_via(query, model, ctx.user)
 
     if has_allowed_users_relationship(model):
         query = query.options(selectinload(getattr(model, "allowed_users")))

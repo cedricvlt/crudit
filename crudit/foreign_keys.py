@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
 from fastapi import HTTPException
@@ -8,6 +8,8 @@ from sqlalchemy import Table, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+
+from crudit.permissions import apply_permissions, is_scoped
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,9 @@ class ForeignKeySpec:
     target_table: Table           # referenced SQLAlchemy Table
     target_pk: str                # referenced PK column name, e.g. "id"
     constraint_name: str | None   # for IntegrityError fallback
+    # Registry of the referencing model, to find the target's mapped class
+    # (for permission checks) at check time, once every model is imported.
+    registry: Any = field(default=None, compare=False)
 
 
 def detect_foreign_keys(
@@ -51,9 +56,20 @@ def detect_foreign_keys(
                 target_table=target_table,
                 target_pk=target_pk,
                 constraint_name=constraint_name,
+                registry=getattr(model, "registry", None),
             )
         )
     return specs
+
+
+def _model_for_table(registry: Any, table: Table) -> type | None:
+    """The mapped class whose table is ``table`` in ``registry``, if any."""
+    if registry is None:
+        return None
+    for mapper in registry.mappers:
+        if mapper.local_table is table:
+            return mapper.class_
+    return None
 
 
 def _violation_exception(missing_cols: list[str]) -> HTTPException:
@@ -73,12 +89,18 @@ async def check_foreign_keys(
     values: Mapping[str, Any],
     *,
     skip_cols: Iterable[str] = (),
+    user: Any = None,
 ) -> None:
     """Pre-flight check: verify every relevant FK value points to an existing row.
 
     Runs a SINGLE SQL query containing N labeled scalar subqueries — one
     per FK that needs checking — so all references are validated in one
     round-trip. Raises ``HTTPException(422)`` listing every missing FK.
+
+    With a ``user``, a reference to a scoped model (company, allowed_users,
+    ``_scope_via``) must also be a row that user may see: otherwise a client
+    could attach its record to another company's sale by id. Such a row is
+    reported exactly like a missing one.
 
     Skipped specs:
       - any column in ``skip_cols`` (caller-controlled — e.g. parent_params,
@@ -99,14 +121,15 @@ async def check_foreign_keys(
     subqueries = []
     for spec in to_check:
         pk_col = spec.target_table.c[spec.target_pk]
-        sq = (
-            select(pk_col)
-            .where(pk_col == values[spec.column])
-            .limit(1)
-            .scalar_subquery()
-            .label(spec.column)
+        query = select(pk_col).where(pk_col == values[spec.column])
+        target = (
+            _model_for_table(spec.registry, spec.target_table)
+            if user is not None
+            else None
         )
-        subqueries.append(sq)
+        if target is not None and is_scoped(target):
+            query = apply_permissions(query, target, user, login_required=False)
+        subqueries.append(query.limit(1).scalar_subquery().label(spec.column))
 
     row = (await db.execute(select(*subqueries))).one()
     missing = [

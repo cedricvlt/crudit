@@ -36,7 +36,7 @@ def delete_endpoint(
     Thin wrapper around `delete_service`. Row-level permission checks
     (company_id / allowed_users) are applied before deletion.
 
-    `path_filters` is only *declared* here, not applied — see `read_endpoint`.
+    `path_filters` narrow the lookup to the URL's parent — see `read_endpoint`.
     """
     pk_field = detect_pk_field(model)
     _pk_python_type = list(sa_inspect(model).primary_key)[0].type.python_type
@@ -66,6 +66,7 @@ def delete_endpoint(
                 config=config,
                 id=id,
                 pk_field=pk_field,
+                path_filters=_path_filters,
             )
         except CruditNotFound:
             raise HTTPException(status_code=404, detail="Not found.")

@@ -43,11 +43,9 @@ def read_endpoint(
     Thin wrapper around `read_service`. Translates `CruditNotFound` to HTTP 404.
     Join resolution and PK detection happen once at registration time.
 
-    `path_filters` is only *declared* here, not applied: the row is looked up by
-    its primary key, so the parent id in the URL does not narrow the query. It
-    still has to appear in the signature, otherwise the parent placeholder of a
-    nested route (``/cities/{city_id}/districts/{id}``) is missing from the
-    OpenAPI schema and generated clients cannot type the call.
+    `path_filters` narrow the lookup to the URL's parent — a district of *this*
+    city, ``/cities/{city_id}/districts/{id}`` — and that parent must be visible
+    to the user (see `read_service`).
     """
     join_info = resolve_joins(model, schema)
     validate_computed_fields(config.computed_fields, model, schema)
@@ -81,6 +79,7 @@ def read_endpoint(
                 id=id,
                 join_info=join_info,
                 pk_field=pk_field,
+                path_filters=_path_filters,
             )
         except CruditNotFound:
             raise HTTPException(status_code=404, detail="Not found.")

@@ -12,6 +12,8 @@ from crudit.exceptions import CruditNotFound, CruditValidationError
 from crudit.joins import JoinInfo
 from crudit.m2m.config import M2MConfig
 from crudit.permissions import (
+    apply_permissions,
+    apply_scope_via,
     check_object_permissions,
     check_route_permissions,
     has_allowed_users_relationship,
@@ -51,6 +53,7 @@ async def get_parent_or_not_found(
     query = select(spec.parent_model).where(
         getattr(spec.parent_model, pk_field) == parent_id
     )
+    query = apply_scope_via(query, spec.parent_model, ctx.user)
     if has_allowed_users_relationship(spec.parent_model):
         query = query.options(selectinload(getattr(spec.parent_model, "allowed_users")))
     result = await db.execute(query)
@@ -68,12 +71,17 @@ async def get_parent_or_not_found(
     return parent
 
 
-async def _list_children(db: AsyncSession, spec: M2MSpec, parent_id: int) -> list[BaseModel]:
+async def _list_children(
+    db: AsyncSession, ctx: CruditContext, spec: M2MSpec, parent_id: int
+) -> list[BaseModel]:
+    """The linked children the user may see: a property's sales are listed only
+    as far as the caller's own companies go."""
     query = (
         select(spec.child_model)
         .join(spec.association_table, spec.child_model.id == spec.child_fk_col)
         .where(spec.parent_fk_col == parent_id)
     )
+    query = apply_permissions(query, spec.child_model, ctx.user, login_required=False)
     if spec.order_col is not None:
         # nulls_last keeps links predating the order column (or written outside
         # this router) at the end rather than jumping to the front.
@@ -102,7 +110,7 @@ async def m2m_list_service(
     """
     check_route_permissions(ctx.user, spec.login_enforced)
     await get_parent_or_not_found(db, ctx, spec, parent_id)
-    return await _list_children(db, spec, parent_id)
+    return await _list_children(db, ctx, spec, parent_id)
 
 
 async def m2m_add_service(
@@ -124,13 +132,15 @@ async def m2m_add_service(
     await get_parent_or_not_found(db, ctx, spec, parent_id)
 
     if child_ids:
-        existing = set(
-            (
-                await db.scalars(
-                    select(spec.child_model.id).where(spec.child_model.id.in_(child_ids))
-                )
-            ).all()
+        # A child the user may not see is reported like a missing one: linking
+        # another company's record by id must not work, nor reveal it exists.
+        visible = apply_permissions(
+            select(spec.child_model.id).where(spec.child_model.id.in_(child_ids)),
+            spec.child_model,
+            ctx.user,
+            login_required=False,
         )
+        existing = set((await db.scalars(visible)).all())
         missing = set(child_ids) - existing
         if missing:
             raise CruditValidationError(
@@ -169,7 +179,7 @@ async def m2m_add_service(
                 await call_hook(spec.config.after_add, parent_id, new_ids, db, ctx.user)
         await db.commit()
 
-    return await _list_children(db, spec, parent_id)
+    return await _list_children(db, ctx, spec, parent_id)
 
 
 async def m2m_remove_service(

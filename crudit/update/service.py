@@ -18,8 +18,12 @@ from crudit.foreign_keys import (
     integrity_error_to_http as fk_integrity_error_to_http,
 )
 from crudit.joins import JoinInfo, resolve_joins
+from crudit.list.filters import apply_path_filters
 from crudit.permissions import (
+    apply_scope_via,
+    check_company_assignment,
     check_object_permissions,
+    ensure_path_parents_visible,
     check_route_permissions,
     has_allowed_users_relationship,
 )
@@ -49,6 +53,7 @@ async def update_service(
     pk_field: str | None = None,
     unique_specs: Any = None,
     fk_specs: Any = None,
+    path_filters: dict[str, str] | None = None,
 ) -> BaseModel:
     """Partially update a row and return it serialised as `read_schema`.
 
@@ -80,6 +85,10 @@ async def update_service(
     # 2. Fetch existing object
     pk_col = getattr(model, pk_field)
     query = select(model).where(pk_col == id)
+    if path_filters:
+        query = apply_path_filters(query, model, path_filters, ctx.path_params)
+        await ensure_path_parents_visible(db, model, path_filters, ctx.path_params, ctx.user)
+    query = apply_scope_via(query, model, ctx.user)
 
     options = join_info.eager_load_options(model, set())
     if load_allowed_users:
@@ -130,9 +139,10 @@ async def update_service(
     # patch_data is exclude_unset, so a PATCH that touches no FK column
     # results in zero FK queries. Runs before the unique check so an
     # invalid FK is reported instead of a downstream uniqueness error.
+    check_company_assignment(model, patch_data, ctx.user)
     if fk_specs:
         await check_foreign_keys(
-            db, fk_specs, patch_data, skip_cols=_FK_SKIP_COLS,
+            db, fk_specs, patch_data, skip_cols=_FK_SKIP_COLS, user=ctx.user,
         )
 
     # 10. Pre-flight unique constraint check using the post-patch values.

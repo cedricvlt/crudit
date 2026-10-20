@@ -358,7 +358,9 @@ Behaviour per verb:
 - **list / options**: adds `WHERE city_id = :city_id` to the query.
 - **reorder**: any ID outside the URL scope is treated as not found (404).
 - **create**: drops `city_id` from the request body schema and auto-injects the URL value before the row is persisted.
-- **read / update / delete**: not affected — those verbs identify the row by its own `{id}` and apply row-level permissions instead.
+- **read / update / delete**: adds the same `WHERE city_id = :city_id`, so `/cities/1/districts/{id}` cannot reach a district of another city (404).
+
+On every verb, when `city_id` is a foreign key whose model is row-level scoped (see [Permissions](#permissions)), the URL's parent itself must be visible to the user — otherwise **404**, list included.
 
 ### SharedConfig
 
@@ -981,6 +983,22 @@ list_endpoint(
 |---|---|
 | `company_id` column | the row's `company_id` must be one of the user's companies |
 | `allowed_users` relationship | user's `id` must appear in the row's `allowed_users` |
+| `_scope_via = "<relationship>"` class attribute | the row's parent (that many-to-one relationship) must itself be visible |
+
+`_scope_via` covers child rows with no company of their own — an order line, a payment —
+which belong to whoever may see their parent:
+
+```python
+class OrderLine(Base):
+    _scope_via = "sale"  # visible iff its sale is
+    sale_id: Mapped[int] = mapped_column(ForeignKey("sales.id"))
+    sale: Mapped[Sale] = relationship()
+```
+
+Chains resolve recursively (a payment `_scope_via = "line"`, the line `_scope_via = "sale"`).
+It is ignored on a model that has `company_id` or `allowed_users` itself. As a model
+attribute it applies wherever crudit scopes rows: lists, options, m2m children and the by-id
+lookups of read / update / delete / reorder, where an out-of-reach child is **404**.
 
 Company scoping expects the user to be **multi-company**: the user model exposes a
 `companies` many-to-many relationship, and crudit emits `company_id IN (<the user's
@@ -1008,6 +1026,15 @@ The enforcement mechanism differs by endpoint:
 | `read_endpoint` | Python check after fetch — returns **403** if the object exists but is inaccessible |
 
 For `read_endpoint`, `allowed_users` is always `selectinload`-ed (even if absent from the response schema) so the membership check always has the data it needs.
+
+**Writes and links** follow the same rules:
+
+- **create / update**: a `company_id` in the body must be one of the user's companies (superusers —
+  `user.is_superuser` — are exempt), and every foreign key in the body that points at a row-level
+  scoped model must name a row the user can see. Both fail with the **422** a missing foreign key
+  gets, so another company's ids are not even confirmed to exist.
+- **m2m**: linking a child the user cannot see fails like a missing id (422), and the children
+  listed under a parent are only those the user can see.
 
 ---
 

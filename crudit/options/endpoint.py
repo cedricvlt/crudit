@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import func, inspect, select
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
 from crudit.context import CruditContext
-from crudit.exceptions import CruditConfigError
+from crudit.exceptions import CruditConfigError, CruditNotFound
 from crudit.joins import JoinInfo, collect_needed_joins, collect_sortable_field_paths, resolve_joins
 from crudit.types import PermissionDepFn
 from crudit.list.filters import (
@@ -23,7 +23,7 @@ from crudit.list.pagination import apply_pagination, resolve_pagination
 from crudit.list.search import apply_search
 from crudit.list.sort import apply_sort
 from crudit.options.config import OptionsConfig
-from crudit.permissions import apply_permissions
+from crudit.permissions import apply_permissions, ensure_path_parents_visible
 from crudit.schemas import OffsetPaginatedResponse
 from crudit.signature import inject_path_params, inject_query_params
 from crudit.utils import bind_perms, call_hook, get_error_responses, model_snake_name, user_dep_or_none
@@ -117,6 +117,11 @@ def options_endpoint(
 
         query = select(_model)
         query = apply_path_filters(query, _model, _path_filters, path_params)
+        if _path_filters:
+            try:
+                await ensure_path_parents_visible(db, _model, _path_filters, path_params, current_user)
+            except CruditNotFound:
+                raise HTTPException(status_code=404, detail="Not found.")
         query = apply_default_filters(query, _model, _config.default_filters)
         query = apply_permissions(
             query,

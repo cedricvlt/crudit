@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from crudit.list.filters import apply_path_filters
-from crudit.permissions import check_object_permissions, check_route_permissions, has_allowed_users_relationship
+from crudit.exceptions import CruditNotFound
+from crudit.permissions import (
+    apply_scope_via,
+    check_object_permissions,
+    check_route_permissions,
+    ensure_path_parents_visible,
+    has_allowed_users_relationship,
+)
 from crudit.read.endpoint import detect_pk_field
 from crudit.reorder.config import ReorderConfig
 from crudit.signature import inject_path_params
@@ -80,6 +87,12 @@ def reorder_endpoint(
 
         query = select(_model).where(pk_col.in_(body.ids))
         query = apply_path_filters(query, _model, _path_filters, path_params)
+        query = apply_scope_via(query, _model, current_user)
+        if _path_filters:
+            try:
+                await ensure_path_parents_visible(db, _model, _path_filters, path_params, current_user)
+            except CruditNotFound:
+                raise HTTPException(status_code=404, detail="Not found.")
 
         if load_allowed_users:
             query = query.options(selectinload(getattr(_model, "allowed_users")))
